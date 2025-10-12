@@ -16,7 +16,7 @@ st.title("📈 NSE Intraday Stock Picker Dashboard")
 # ----------------------------
 # Sidebar Filters & Settings
 # ----------------------------
-st.sidebar.header("⚙️ Filter Settings & Options")
+st.sidebar.header("⚙️ Filter Settings")
 
 interval = st.sidebar.selectbox(
     "⏱️ Intraday Interval (bars)", ["15m", "30m", "1h"], index=0,
