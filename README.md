@@ -27,3 +27,32 @@ The app provides **12 ready-to-use test combos** to cover different intraday tra
   - Fixed % → fixed percentage of entry price  
   - Fixed Rs → fixed points amount for target  
 - These presets allow **fast testing of multiple scenarios** without manually adjusting sliders or checkboxes.
+
+
+### 🧠 Technical Prediction Module
+
+If you enable **“Show Technical Predictions”** from the sidebar,  
+the app analyzes shortlisted stocks for:
+
+| Indicator | Meaning |
+|------------|----------|
+| **RSI (7)** | Detects overbought/oversold conditions |
+| **Support / Resistance** | Checks proximity to key zones |
+| **Double Top / Bottom** | Identifies reversal patterns |
+| **Trend Line** | Finds short-term up/down trends |
+| **Verdict** | Combines all factors into a clear bias (Buy / Sell / Neutral) |
+
+This gives a quick high-level *directional view* before intraday entry.
+
+
+Filter / Indicator          |  Calculation                                                    |  Condition For Pick            |  Purpose                       
+----------------------------+-----------------------------------------------------------------+--------------------------------+--------------------------------
+Volume Spike                |  Current volume vs 20-bar average volume × multiplier           |  Current volume > threshold    |  Identify unusual volume spikes
+ATR Breakout                |  ATR value compared to percentile threshold × multiplier        |  ATR > threshold               |  Filter volatile stocks        
+Relative Strength           |  % change stock close – % change NIFTY close over RS lookback   |  Difference > 0                |  Select outperforming stocks   
+Price Breakout              |  Last close > max close of previous N bars (momentum lookback)  |  Last close > previous high    |  Detect breakout               
+EMA20 + RSI10 Confirmation  |  Last close > EMA20 and RSI(10) > 50                            |  Both true                     |  Confirm bullish momentum      
+RSI Indicator               |  RSI(7) with overbought and oversold zones                      |  RSI > 80 sell, RSI < 20 buy   |  Identify extreme momentum     
+Support/Resistance Zones    |  Price within 1% of support or resistance from last 20 bars     |  Near support or resistance    |  Price action zones            
+Double Tops / Bottoms       |  Pattern match on last 10 highs/lows                            |  Double top or bottom pattern  |  Potential reversal signals    
+Trend Line                  |  Linear slope of last 15 closes                                 |  Positive slope = uptrend      |  Confirm trend direction       
