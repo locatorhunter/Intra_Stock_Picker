@@ -8,20 +8,14 @@ from streamlit_autorefresh import st_autorefresh
 from datetime import datetime, time as dt_time
 import pytz
 import talib
-import watchlist
+import watchlist  # Make sure watchlist.py with display_watchlist() is in project
 
 
-# ----------------------------
-# Page Config
-# ----------------------------
-st.set_page_config("📊 NSE Intraday Stock Picker", layout="wide")
+# --- Page Config ---
+st.set_page_config(page_title="📊 NSE Intraday Stock Picker", layout="wide")
 st.title("📈 NSE Intraday Stock Picker Dashboard")
 
-# ----------------------------
-# Sidebar Filters & Settings
-# ----------------------------
-
-# Default values
+# --- Sidebar Filters & Settings ---
 interval = "5m"
 use_volume = True
 use_atr = True
@@ -40,17 +34,9 @@ notify_telegram = False
 BOT_TOKEN = ""
 CHAT_ID = ""
 
-# Sidebar inputs
-# Sidebar input
-auto_refresh_sec = st.sidebar.slider("Auto refresh (seconds)", 30, 600, 180, 10)
-
-# Auto-refresh with user selected interval
-count = st_autorefresh(interval=auto_refresh_sec * 1000, limit=None, key="auto_refresh")
-st.markdown(f"⏰ Auto refreshed {count} times. Interval set to {auto_refresh_sec} seconds.")
-
-show_technical_predictions = st.sidebar.checkbox("Show Technical Predictions", value=True)
-
-interval = st.sidebar.selectbox("⏱️ Intraday Interval (bars)", ["5m", "15m", "30m", "1h"], index=0)
+# Sidebar inputs with default settings
+auto_refresh_sec = st.sidebar.slider("Auto refresh (seconds)", 30, 600, auto_refresh_sec, 10)
+interval = st.sidebar.selectbox("Intraday Interval (bars)", ["5m", "15m", "30m", "1h"], index=0)
 use_volume = st.sidebar.checkbox("📊 Enable Volume Spike Filter", use_volume)
 use_atr = st.sidebar.checkbox("📈 Enable ATR Filter", use_atr)
 use_rs = st.sidebar.checkbox("💪 Enable Relative Strength Filter", use_rs)
@@ -64,34 +50,35 @@ atr_percentile = st.sidebar.slider("ATR percentile threshold", 0, 100, atr_perce
 momentum_lookback = st.sidebar.slider("Momentum lookback (bars)", 1, 20, momentum_lookback)
 rs_lookback = st.sidebar.slider("RS lookback days", 1, 20, rs_lookback)
 max_symbols = st.sidebar.slider("Max F&O symbols to scan", 50, 200, max_symbols)
-#auto_refresh_sec = st.sidebar.slider("Auto refresh (seconds)", 30, 600, auto_refresh_sec, 10)
 
 notify_desktop = st.sidebar.checkbox("💻 Enable Desktop Notification", notify_desktop)
 notify_telegram = st.sidebar.checkbox("📨 Enable Telegram Notification", notify_telegram)
 BOT_TOKEN = st.sidebar.text_input("Telegram Bot Token", BOT_TOKEN, type="password")
 CHAT_ID = st.sidebar.text_input("Telegram Chat ID", CHAT_ID)
 
-# -------------- Dummy placeholder variables to prevent errors ----------------
+show_technical_predictions = st.sidebar.checkbox("Show Technical Predictions", True)
+
+
+# Auto-refresh data automatically
+refresh_count = st_autorefresh(interval=auto_refresh_sec * 1000, limit=None, key="auto_refresh")
+st.markdown(f"⏰ Auto refreshed {refresh_count} times. Interval set to {auto_refresh_sec} seconds.")
+
+
+# --- Data Fetch Helper ---
 def fetch_intraday_data(stock, interval):
-    # Dummy yfinance intraday data fetch for technical section
     try:
         df = yf.download(stock + ".NS", period="5d", interval=interval, progress=False)
-        df.rename(columns=str.lower, inplace=True)  # talib expects lowercase column names
+        df.rename(columns=str.lower, inplace=True)
         return df
-    except:
+    except Exception:
         return pd.DataFrame()
 
-shortlisted_stocks = []  # This will be assigned from scan results below
-
-# ---------------- Technical analysis function --------------
+# --- Technical Analysis ---
 def analyze_technical_indicators(df):
     result = {}
-
-# Ensure column is lowercase and 1D numpy array
     close_col = "close" if "close" in df.columns else "Close"
     close_series = df[close_col].dropna()
-    close_clean = close_series.values.astype(float).flatten()  # ENSURE 1D
-    
+    close_clean = close_series.values.astype(float).flatten()
     if len(close_clean) < 7:
         result["RSI Signal"] = "⚪ Not enough data"
         return result
@@ -102,7 +89,6 @@ def analyze_technical_indicators(df):
     df['RSI'] = rsi_series
 
     latest_rsi = rsi_series.dropna().iloc[-1]
-
     if latest_rsi > 80:
         result["RSI Signal"] = "🔴 Overbought (Sell Bias)"
     elif latest_rsi < 20:
@@ -112,7 +98,7 @@ def analyze_technical_indicators(df):
 
     recent_highs = df['high'].tail(20)
     recent_lows = df['low'].tail(20)
-    support = float(recent_lows.min())  # ensures scalar
+    support = float(recent_lows.min())
     resistance = float(recent_highs.max())
     last_close = float(df['close'].iloc[-1])
 
@@ -123,31 +109,8 @@ def analyze_technical_indicators(df):
     else:
         result["S/R Zone"] = "⚪ Mid Range"
 
-    print(type(df['high']))
-    # Defensive: Handle if 'high' is a Series or accidental DataFrame
-    if 'high' in df.columns:
-        highs_temp = df['high'].tail(10)
-        if isinstance(highs_temp, pd.Series):
-            highs = highs_temp.tolist()
-        elif isinstance(highs_temp, pd.DataFrame):
-            highs = highs_temp.iloc[:, 0].tolist()  # Take the first column
-        else:
-            highs = list(highs_temp)
-    else:
-        highs = []
-
-    if 'low' in df.columns:
-        lows_temp = df['low'].tail(10)
-        if isinstance(lows_temp, pd.Series):
-            lows = lows_temp.tolist()
-        elif isinstance(lows_temp, pd.DataFrame):
-            lows = lows_temp.iloc[:, 0].tolist()
-        else:
-            lows = list(lows_temp)
-    else:
-        lows = []
-
-
+    highs = recent_highs.tolist()
+    lows = recent_lows.tolist()
     double_top = highs[-3] < highs[-2] > highs[-1]
     double_bottom = lows[-3] > lows[-2] < lows[-1]
 
@@ -159,17 +122,11 @@ def analyze_technical_indicators(df):
         result["Pattern"] = "⚪ None"
 
     closes = df['close'].tail(15).to_numpy()
-    x = np.arange(len(closes))
-    slope = np.polyfit(x, closes, 1)[0]
-    if slope > 0:
-        result["Trend"] = "🟢 Uptrend"
-    else:
-        result["Trend"] = "🔴 Downtrend"
+    slope = np.polyfit(np.arange(len(closes)), closes, 1)[0]
+    result["Trend"] = "🟢 Uptrend" if slope > 0 else "🔴 Downtrend"
 
-    signals = list(result.values())
-    bullish = sum("🟢" in s for s in signals)
-    bearish = sum("🔴" in s for s in signals)
-
+    bullish = sum("🟢" in s for s in result.values())
+    bearish = sum("🔴" in s for s in result.values())
     if bullish > bearish:
         result["Verdict"] = "✅ Strong Buy Setup"
     elif bearish > bullish:
@@ -178,9 +135,9 @@ def analyze_technical_indicators(df):
         result["Verdict"] = "⚪ Neutral / Wait"
 
     return result
-# ---------------------------
-# Market Timing Warning
-# ---------------------------
+
+
+# --- Market Timing Warning ---
 IST = pytz.timezone("Asia/Kolkata")
 now_ist = datetime.now(IST)
 market_open_time = dt_time(9, 15)
@@ -188,22 +145,8 @@ market_close_time = dt_time(15, 30)
 if not (market_open_time <= now_ist.time() <= market_close_time):
     st.warning("📴 Market is currently closed — displaying latest historical data.")
 
-# --- Run Technical Predictions Section ---
-if show_technical_predictions:
-    st.subheader("📈 Technical Predictions for Shortlisted Stocks")
-    if len(shortlisted_stocks) == 0:
-        st.info("No shortlisted stocks to show predictions for.")
-    else:
-        for stock in shortlisted_stocks:
-            df = fetch_intraday_data(stock, interval)
-            if df is not None and not df.empty:
-                analysis = analyze_technical_indicators(df)
-                st.markdown(f"### {stock}")
-                st.table(pd.DataFrame(analysis, index=[0]))
-            else:
-                st.warning(f"No data found for {stock}")
 
-# ---------------- Telegram Validation ----------------
+# --- Telegram Validation ---
 def validate_telegram(bot_token, chat_id):
     if not bot_token or not chat_id:
         return False, "BOT_TOKEN or CHAT_ID is empty"
@@ -217,6 +160,7 @@ def validate_telegram(bot_token, chat_id):
     except Exception as e:
         return False, f"Error: {str(e)}"
 
+
 if BOT_TOKEN and CHAT_ID:
     valid, message = validate_telegram(BOT_TOKEN, CHAT_ID)
     if valid:
@@ -224,17 +168,8 @@ if BOT_TOKEN and CHAT_ID:
     else:
         st.sidebar.error(message)
 
-# ------------------------
-# Helper functions for scanning and notifications
-def get_fundamentals(symbol):
-    try:
-        info = yf.Ticker(symbol + ".NS").info
-        keys = ["sector", "industry", "marketCap", "trailingPE", "forwardPE",
-                "priceToBook", "dividendYield", "returnOnEquity", "profitMargins"]
-        return {k: info.get(k, "N/A") for k in keys}
-    except Exception as e:
-        return {"error": str(e)}
 
+# --- Get F&O Symbols ---
 @st.cache_data(ttl=3600)
 def get_fo_symbols():
     return [
@@ -251,6 +186,7 @@ def get_fo_symbols():
     ][:max_symbols]
 
 
+# --- Get price data ---
 @st.cache_data(ttl=300)
 def get_price_data(symbol, period="5d", interval="15m"):
     try:
@@ -259,20 +195,24 @@ def get_price_data(symbol, period="5d", interval="15m"):
             return pd.DataFrame()
         df.dropna(inplace=True)
         return df
-    except:
+    except Exception:
         return pd.DataFrame()
 
+
+# --- Notification Function ---
 def notify_stock(symbol, last_price, entry=None, stop_loss=None, target=None,
                  desktop_enabled=True, telegram_enabled=True):
     msg = f"📢 {symbol} shortlisted!\n💵 Last: {last_price}"
-    if entry: msg += f"\n🟢 Entry: {entry}"
-    if stop_loss: msg += f"\n❌ Stop-Loss: {stop_loss}"
-    if target: msg += f"\n🏆 Target: {target}"
+    if entry:
+        msg += f"\n🟢 Entry: {entry}"
+    if stop_loss:
+        msg += f"\n❌ Stop-Loss: {stop_loss}"
+    if target:
+        msg += f"\n🏆 Target: {target}"
 
     if desktop_enabled:
         try:
             notification.notify(title=f"📈 NSE Picker: {symbol}", message=msg, timeout=5)
-           # st.write(f"Desktop notification sent: {symbol}")
         except Exception as e:
             st.warning(f"Desktop notification error: {e}")
 
@@ -282,28 +222,33 @@ def notify_stock(symbol, last_price, entry=None, stop_loss=None, target=None,
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
             try:
                 requests.get(url, params={"chat_id": CHAT_ID, "text": msg}, timeout=5)
-               # st.write(f"Telegram notification sent: {symbol}")
             except Exception as e:
                 st.warning(f"Telegram notification error: {e}")
+
+
+# --- Scan each stock ---
 
 def scan_stock(df, symbol):
     if df.empty or len(df) < 25:
         return False, [], None, None, None
 
-    # Check column names
-    if not all(col in df.columns for col in ["High", "Low", "Close"]):
+    required_cols = ["High", "Low", "Close", "Volume"]
+    if any(col not in df.columns for col in required_cols):
         return False, [], None, None, None
 
-    highs = df['High'].astype(float).values
-    lows = df['Low'].astype(float).values
-    closes = df['Close'].astype(float).values
+    highs = np.array(df["High"].astype(float)).flatten()
+    lows = np.array(df["Low"].astype(float)).flatten()
+    closes = np.array(df["Close"].astype(float)).flatten()
 
-    # Check shapes
     if highs.ndim != 1 or lows.ndim != 1 or closes.ndim != 1:
         return False, [], None, None, None
 
-    df["ATR"] = talib.ATR(highs, lows, closes, timeperiod=atr_period)
-    
+    try:
+        df["ATR"] = talib.ATR(highs, lows, closes, timeperiod=atr_period)
+    except Exception as e:
+        st.warning(f"Error calculating ATR for {symbol}: {e}")
+        return False, [], None, None, None
+
     df["AvgVol"] = df["Volume"].rolling(20).mean()
     df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
     delta = df["Close"].diff()
@@ -311,43 +256,39 @@ def scan_stock(df, symbol):
     loss = -delta.clip(upper=0)
     avg_gain = gain.rolling(10).mean()
     avg_loss = loss.rolling(10).mean()
-    df["RSI10"] = 100 - (100 / (1 + avg_gain/avg_loss))
+    df["RSI10"] = 100 - (100 / (1 + avg_gain / avg_loss))
 
     try:
         last_vol = float(df["Volume"].values[-1])
+        prev_vol = float(df["Volume"].values[-2])
         avg_vol_val = float(df["AvgVol"].values[-1]) if not np.isnan(df["AvgVol"].values[-1]) else 0
         last_atr = float(df["ATR"].values[-1])
         last_close = float(df["Close"].values[-1])
         prev_close = float(df["Close"].values[-2])
-        prev_vol = float(df["Volume"].values[-2])
-    except:
+    except Exception:
         return False, [], None, None, None
 
     reasons = []
 
-    # Confirmed breakout: last two closes above previous rolling high
     breakout_ok = False
     try:
         rolling_high = df["Close"].rolling(momentum_lookback).max()
-        rh_vals = rolling_high.values.astype(float)
-        brk1 = last_close > rh_vals[-2]
-        brk2 = prev_close > rh_vals[-3]
+        brk1 = last_close > rolling_high.values[-2]
+        brk2 = prev_close > rolling_high.values[-3]
         breakout_ok = brk1 and brk2 and (last_close > prev_close)
         if breakout_ok:
             reasons.append(f"🚀 Confirmed breakout: two closes > {momentum_lookback}-bar high")
     except Exception:
         breakout_ok = False
 
-    # Price above resistance (latest rolling high)
     price_above_resistance = False
     try:
-        price_above_resistance = last_close > rh_vals[-2]
+        price_above_resistance = last_close > rolling_high.values[-2]
         if price_above_resistance:
             reasons.append("🔼 Price above resistance")
     except Exception:
         price_above_resistance = False
 
-    # Sustained RSI: last two closes above 55
     sustained_rsi = False
     try:
         rsi_series = df["RSI10"].values
@@ -357,7 +298,6 @@ def scan_stock(df, symbol):
     except Exception:
         sustained_rsi = False
 
-    # EMA20 confirmation
     ema_ok = False
     try:
         ema_ok = last_close > df["EMA20"].values[-1]
@@ -366,14 +306,12 @@ def scan_stock(df, symbol):
     except Exception:
         ema_ok = False
 
-    # Volume spike: latest volume > previous and > average
     vol_spike_ok = False
     if use_volume:
         vol_spike_ok = (last_vol > prev_vol) and (last_vol > avg_vol_val * vol_spike)
         if vol_spike_ok:
             reasons.append("📊 Volume surge confirmed")
 
-    # Relative strength: outperforming NIFTY
     rs_ok = False
     if use_rs:
         nifty = get_price_data("^NSEI", period="5d", interval="1d")
@@ -383,8 +321,6 @@ def scan_stock(df, symbol):
             if rs_ok:
                 reasons.append("📊 Outperforming NIFTY")
 
-    # Final strict pick condition
-    # --- Pick only if: breakout confirmed, price above resistance, sustained RSI, EMA -- and at least one (volume spike or RS)
     final_pick = breakout_ok and price_above_resistance and sustained_rsi and ema_ok and (vol_spike_ok or rs_ok)
 
     if final_pick:
@@ -392,17 +328,12 @@ def scan_stock(df, symbol):
         stop_loss = entry_price - 2 * last_atr
         target_price = entry_price + 2 * (entry_price - stop_loss)
     else:
-        entry_price = None
-        stop_loss = None
-        target_price = None
-    
+        entry_price = stop_loss = target_price = None
+
     return final_pick, reasons, entry_price, stop_loss, target_price
 
 
-# ---------------------------
-# Scanner and Results Display
-# ---------------------------
-
+# --- Scan and display results ---
 candidates = []
 shortlisted_stocks = []
 
@@ -423,8 +354,9 @@ for i, sym in enumerate(fo_symbols):
             "Reasons": ", ".join(reasons)
         })
         shortlisted_stocks.append(sym)
-        notify_stock(sym, last_close, entry, stop, target, desktop_enabled=notify_desktop, telegram_enabled=notify_telegram)
-    progress.progress((i+1)/len(fo_symbols))
+        notify_stock(sym, last_close, entry, stop, target,
+                     desktop_enabled=notify_desktop, telegram_enabled=notify_telegram)
+    progress.progress((i+1) / len(fo_symbols))
 progress.empty()
 
 if candidates:
@@ -433,10 +365,8 @@ if candidates:
 else:
     st.info("⚠️ No candidates found.")
 
-# ---------------------------
-# Technical Predictions Section
-# ---------------------------
 
+# --- Show technical predictions ---
 if show_technical_predictions:
     st.subheader("📈 Technical Predictions for Shortlisted Stocks")
     if not shortlisted_stocks:
@@ -451,24 +381,18 @@ if show_technical_predictions:
             else:
                 st.warning(f"No data found for {stock}")
 
-# ----------------------------
-# Manual Refresh Button
-# ----------------------------
+
+# --- Manual refresh button ---
 if st.button("🔄 Refresh Data"):
     try:
         st.experimental_rerun()
     except AttributeError:
         st.rerun()
 
-# ----------------------------
-# Manual Stock Analyzer
-# ----------------------------
+
+# --- Manual stock analyzer ---
 st.subheader("📝 Manual Stock Analyzer (Multiple Stocks)")
-
-manual_symbols = st.text_area(
-    "Enter stock symbols separated by commas (e.g., RELIANCE,TCS,INFY)"
-)
-
+manual_symbols = st.text_area("Enter stock symbols separated by commas (e.g., RELIANCE,TCS,INFY)")
 if manual_symbols:
     manual_list = [s.strip().upper() for s in manual_symbols.split(",") if s.strip()]
     for manual_symbol in manual_list:
@@ -500,5 +424,6 @@ if manual_symbols:
                     telegram_enabled=notify_telegram,
                 )
 
-# At the point in your main script where you want watchlist UI:
-watchlist.display_watchlist(notify_desktop, notify_telegram, BOT_TOKEN, CHAT_ID) # define this function in watchlist.py                
+
+# --- Show watchlist UI ---
+watchlist.display_watchlist(notify_desktop, notify_telegram, BOT_TOKEN, CHAT_ID)
