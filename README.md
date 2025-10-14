@@ -56,3 +56,22 @@ RSI Indicator               |  RSI(7) with overbought and oversold zones        
 Support/Resistance Zones    |  Price within 1% of support or resistance from last 20 bars     |  Near support or resistance    |  Price action zones            
 Double Tops / Bottoms       |  Pattern match on last 10 highs/lows                            |  Double top or bottom pattern  |  Potential reversal signals    
 Trend Line                  |  Linear slope of last 15 closes                                 |  Positive slope = uptrend      |  Confirm trend direction       
+
+Test Case  |  ATR Period  |  ATR Multiplier (Stop Loss)  |  Risk-Reward Ratio (Target)  |  Notes                           
+-----------+--------------+------------------------------+------------------------------+----------------------------------
+1          |  7           |  1.5                         |  2.0                         |  Faster stops, moderate RR       
+2          |  7           |  2.0                         |  2.0                         |  Default aggressive stops        
+3          |  10          |  1.5                         |  2.5                         |  Slightly smoother ATR, higher RR
+4          |  10          |  2.0                         |  3.0                         |  Balanced TR and RR              
+5          |  14          |  2.0                         |  2.0                         |  Smoother ATR, standard RR       
+6          |  14          |  2.5                         |  3.5                         |  Conservative stops, high RR     
+7          |  21          |  3.0                         |  4.0                         |  Long ATR period, wide stops     
+8          |  7           |  1.0                         |  1.5                         |  Tighter stops, lower reward     
+
+How to use:
+
+Vary the ATR Period parameter (lookback length on ATR calculation).
+
+Vary the ATR Multiplier which controls how far your stop loss is below entry price.
+
+Vary the Risk-Reward Ratio which sets how far your target is from entry relative to stop loss risk.

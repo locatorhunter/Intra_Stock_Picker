@@ -8,6 +8,8 @@ from streamlit_autorefresh import st_autorefresh
 from datetime import datetime, time as dt_time
 import pytz
 import talib
+import watchlist
+
 
 # ----------------------------
 # Page Config
@@ -39,6 +41,13 @@ BOT_TOKEN = ""
 CHAT_ID = ""
 
 # Sidebar inputs
+# Sidebar input
+auto_refresh_sec = st.sidebar.slider("Auto refresh (seconds)", 30, 600, 180, 10)
+
+# Auto-refresh with user selected interval
+count = st_autorefresh(interval=auto_refresh_sec * 1000, limit=None, key="auto_refresh")
+st.markdown(f"⏰ Auto refreshed {count} times. Interval set to {auto_refresh_sec} seconds.")
+
 show_technical_predictions = st.sidebar.checkbox("Show Technical Predictions", value=True)
 
 interval = st.sidebar.selectbox("⏱️ Intraday Interval (bars)", ["5m", "15m", "30m", "1h"], index=0)
@@ -49,12 +58,13 @@ use_breakout = st.sidebar.checkbox("🚀 Enable Technical Breakout Filter", use_
 use_ema_rsi = st.sidebar.checkbox("📉 EMA(20) + RSI(10) Filter", use_ema_rsi)
 
 vol_spike = st.sidebar.slider("Volume spike multiplier", 1.0, 10.0, vol_spike, 0.1)
+atr_period = st.sidebar.slider("ATR period", 5, 21, 14, 1)
 atr_mult = st.sidebar.slider("ATR multiplier for stop", 0.5, 5.0, atr_mult, 0.1)
 atr_percentile = st.sidebar.slider("ATR percentile threshold", 0, 100, atr_percentile)
 momentum_lookback = st.sidebar.slider("Momentum lookback (bars)", 1, 20, momentum_lookback)
 rs_lookback = st.sidebar.slider("RS lookback days", 1, 20, rs_lookback)
 max_symbols = st.sidebar.slider("Max F&O symbols to scan", 50, 200, max_symbols)
-auto_refresh_sec = st.sidebar.slider("Auto refresh (seconds)", 30, 600, auto_refresh_sec, 10)
+#auto_refresh_sec = st.sidebar.slider("Auto refresh (seconds)", 30, 600, auto_refresh_sec, 10)
 
 notify_desktop = st.sidebar.checkbox("💻 Enable Desktop Notification", notify_desktop)
 notify_telegram = st.sidebar.checkbox("📨 Enable Telegram Notification", notify_telegram)
@@ -177,7 +187,7 @@ market_open_time = dt_time(9, 15)
 market_close_time = dt_time(15, 30)
 if not (market_open_time <= now_ist.time() <= market_close_time):
     st.warning("📴 Market is currently closed — displaying latest historical data.")
-    
+
 # --- Run Technical Predictions Section ---
 if show_technical_predictions:
     st.subheader("📈 Technical Predictions for Shortlisted Stocks")
@@ -227,7 +237,19 @@ def get_fundamentals(symbol):
 
 @st.cache_data(ttl=3600)
 def get_fo_symbols():
-    return ["RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK"][:max_symbols]
+    return [
+        "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "SBIN", "LT",
+        "MARUTI", "AXISBANK", "BHARTIARTL", "ITC", "TATAMOTORS", "SUNPHARMA",
+        "KOTAKBANK", "HINDUNILVR", "ASIANPAINT", "WIPRO", "NESTLEIND", "ULTRACEMCO",
+        "ADANIPORTS", "POWERGRID", "TATASTEEL", "JSWSTEEL", "M&M", "DRREDDY",
+        "CIPLA", "DIVISLAB", "GRASIM", "BAJAJFINSV", "INDIGO", "NTPC", "COALINDIA",
+        "BRITANNIA", "EICHERMOT", "HCLTECH", "ONGC", "BEL", "TRENT", "SIEMENS",
+        "DLF", "PIDILITIND", "APOLLOHOSP",
+        "HAVELLS", "BAJAJ-AUTO", "TECHM", "VEDL", "TITAN", "BOSCHLTD", "GAIL", "JPPOWER",
+        "UPL", "TATAMOTORS", "GRASIM", "CIPLA", "LTI", "COLPAL", "EICHERMOT",
+        "ICICIGI", "ADANIPOWER", "BAJFINANCE"
+    ][:max_symbols]
+
 
 @st.cache_data(ttl=300)
 def get_price_data(symbol, period="5d", interval="15m"):
@@ -265,10 +287,23 @@ def notify_stock(symbol, last_price, entry=None, stop_loss=None, target=None,
                 st.warning(f"Telegram notification error: {e}")
 
 def scan_stock(df, symbol):
-    if df.empty or len(df) < 20:
+    if df.empty or len(df) < 25:
         return False, [], None, None, None
 
-    df["ATR"] = df["High"] - df["Low"]
+    # Check column names
+    if not all(col in df.columns for col in ["High", "Low", "Close"]):
+        return False, [], None, None, None
+
+    highs = df['High'].astype(float).values
+    lows = df['Low'].astype(float).values
+    closes = df['Close'].astype(float).values
+
+    # Check shapes
+    if highs.ndim != 1 or lows.ndim != 1 or closes.ndim != 1:
+        return False, [], None, None, None
+
+    df["ATR"] = talib.ATR(highs, lows, closes, timeperiod=atr_period)
+    
     df["AvgVol"] = df["Volume"].rolling(20).mean()
     df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
     delta = df["Close"].diff()
@@ -283,52 +318,86 @@ def scan_stock(df, symbol):
         avg_vol_val = float(df["AvgVol"].values[-1]) if not np.isnan(df["AvgVol"].values[-1]) else 0
         last_atr = float(df["ATR"].values[-1])
         last_close = float(df["Close"].values[-1])
+        prev_close = float(df["Close"].values[-2])
+        prev_vol = float(df["Volume"].values[-2])
     except:
         return False, [], None, None, None
 
-    conds, reasons = [], []
+    reasons = []
 
+    # Confirmed breakout: last two closes above previous rolling high
+    breakout_ok = False
+    try:
+        rolling_high = df["Close"].rolling(momentum_lookback).max()
+        rh_vals = rolling_high.values.astype(float)
+        brk1 = last_close > rh_vals[-2]
+        brk2 = prev_close > rh_vals[-3]
+        breakout_ok = brk1 and brk2 and (last_close > prev_close)
+        if breakout_ok:
+            reasons.append(f"🚀 Confirmed breakout: two closes > {momentum_lookback}-bar high")
+    except Exception:
+        breakout_ok = False
+
+    # Price above resistance (latest rolling high)
+    price_above_resistance = False
+    try:
+        price_above_resistance = last_close > rh_vals[-2]
+        if price_above_resistance:
+            reasons.append("🔼 Price above resistance")
+    except Exception:
+        price_above_resistance = False
+
+    # Sustained RSI: last two closes above 55
+    sustained_rsi = False
+    try:
+        rsi_series = df["RSI10"].values
+        sustained_rsi = (rsi_series[-1] > 55) and (rsi_series[-2] > 55)
+        if sustained_rsi:
+            reasons.append("💪 Sustained RSI>55 momentum")
+    except Exception:
+        sustained_rsi = False
+
+    # EMA20 confirmation
+    ema_ok = False
+    try:
+        ema_ok = last_close > df["EMA20"].values[-1]
+        if ema_ok:
+            reasons.append("📈 Price above EMA20")
+    except Exception:
+        ema_ok = False
+
+    # Volume spike: latest volume > previous and > average
+    vol_spike_ok = False
     if use_volume:
-        cond = last_vol > avg_vol_val * vol_spike
-        conds.append(cond)
-        if cond:
-            reasons.append("📊 Volume spike")
+        vol_spike_ok = (last_vol > prev_vol) and (last_vol > avg_vol_val * vol_spike)
+        if vol_spike_ok:
+            reasons.append("📊 Volume surge confirmed")
 
-    if use_atr:
-        atr_thresh = df["ATR"].quantile(atr_percentile / 100)
-        cond = last_atr > atr_thresh * atr_mult
-        conds.append(cond)
-        if cond:
-            reasons.append("📈 ATR breakout")
-
-    if use_breakout:
-        high_break = last_close > df["Close"].rolling(momentum_lookback).max().values[-2]
-        conds.append(high_break)
-        if high_break:
-            reasons.append(f"🚀 Price breakout above {momentum_lookback}-bar high")
-
+    # Relative strength: outperforming NIFTY
+    rs_ok = False
     if use_rs:
         nifty = get_price_data("^NSEI", period="5d", interval="1d")
         if not nifty.empty:
             rs = (df["Close"].pct_change(rs_lookback).iloc[-1]) - (nifty["Close"].pct_change(rs_lookback).iloc[-1])
-            cond = rs > 0
-            conds.append(cond)
-            if cond:
-                reasons.append("💪 Positive RS vs NIFTY")
+            rs_ok = rs > 0
+            if rs_ok:
+                reasons.append("📊 Outperforming NIFTY")
 
-    entry_price, stop_loss, target_price = None, None, None
-    if use_ema_rsi:
-        ema_cond = last_close > df["EMA20"].values[-1]
-        rsi_cond = df["RSI10"].values[-1] > 50
-        trend_cond = ema_cond and rsi_cond
-        conds.append(trend_cond)
-        if trend_cond:
-            reasons.append("🟢 EMA20 and RSI10 confirmation")
-            entry_price = last_close
-            stop_loss = entry_price - 2*last_atr
-            target_price = entry_price + 2*(entry_price-stop_loss)
+    # Final strict pick condition
+    # --- Pick only if: breakout confirmed, price above resistance, sustained RSI, EMA -- and at least one (volume spike or RS)
+    final_pick = breakout_ok and price_above_resistance and sustained_rsi and ema_ok and (vol_spike_ok or rs_ok)
 
-    return all(conds), reasons, entry_price, stop_loss, target_price
+    if final_pick:
+        entry_price = last_close
+        stop_loss = entry_price - 2 * last_atr
+        target_price = entry_price + 2 * (entry_price - stop_loss)
+    else:
+        entry_price = None
+        stop_loss = None
+        target_price = None
+    
+    return final_pick, reasons, entry_price, stop_loss, target_price
+
 
 # ---------------------------
 # Scanner and Results Display
@@ -430,3 +499,6 @@ if manual_symbols:
                     desktop_enabled=notify_desktop,
                     telegram_enabled=notify_telegram,
                 )
+
+# At the point in your main script where you want watchlist UI:
+watchlist.display_watchlist(notify_desktop, notify_telegram, BOT_TOKEN, CHAT_ID) # define this function in watchlist.py                
