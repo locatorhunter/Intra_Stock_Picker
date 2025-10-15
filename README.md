@@ -75,3 +75,15 @@ Vary the ATR Period parameter (lookback length on ATR calculation).
 Vary the ATR Multiplier which controls how far your stop loss is below entry price.
 
 Vary the Risk-Reward Ratio which sets how far your target is from entry relative to stop loss risk.
+
+| Parameter                        | Suggested Value                          | Why                                                                                                            |
+| -------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **Volume Spike Multiplier**      | `1.5x – 2x`                              | Filters only genuine spikes — e.g., if average 10-min volume = 100k, today’s bar should be >150k–200k.         |
+| **ATR Period**                   | `14`                                     | Standard. Keeps volatility smooth.                                                                             |
+| **ATR Multiplier for Stop Loss** | `1.8x – 2x`                              | A 2× buffer avoids getting stopped out by random intraday wiggles.                                             |
+| **ATR Percentile Threshold**     | `30 – 40`                                | Keeps moderate-to-high volatility stocks; not too crazy, not dead.                                             |
+| **Momentum Lookback (bars)**     | `20 – 40`                                | Captures a short trend burst (approx. last 30–60 mins on 5-min chart).                                         |
+| **RSI (7)**                      | Overbought >80, Oversold <20, Neutral 50 | For intraday moves, RSI 7 reacts quickly — over 80 means “maybe short soon,” below 20 means “maybe long soon.” |
+| **Double Bottom / Top**          | Confirm with volume divergence           | When RSI diverges or volume spikes near 2nd bottom/top — it’s a strong reversal clue.                          |
+| **Support / Resistance**         | From 1D and 1H timeframe                 | For intraday, plot S/R from previous day’s highs/lows, not weekly.                                             |
+| **Max F&O Symbols to Scan**      | `100–150`                                | Keeps your scanner efficient and avoids clutter.                                                               |
