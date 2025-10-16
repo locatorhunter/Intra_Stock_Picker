@@ -11,6 +11,62 @@ import talib
 import json
 import os # Import the os module
 
+st.markdown("<h1 style='text-align: center; margin-bottom: -100px; margin-top: -10px;'> STOCK HUNTER </h1>", 
+    unsafe_allow_html=True)
+
+# --- GLOBAL DEFINITIONS ---
+IST = pytz.timezone("Asia/Kolkata")
+
+#------------------------
+#Notification
+#------------------------
+
+def safe_notify(title, msg):
+    if notify_desktop:
+        try:
+            notification.notify(title=title, message=msg, timeout=6)
+        except Exception as e:
+            st.warning(f"Desktop notify error: {e}")
+
+def safe_telegram_send(text):
+    if not notify_telegram or not BOT_TOKEN or not CHAT_ID:
+        print("DEBUG: Telegram disabled or credentials missing.") # <-- NEW DEBUG
+        return False, "Telegram disabled or credentials missing"
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    try:
+        # Use a small timeout just in case of network issues
+        resp = requests.get(url, params={"chat_id": CHAT_ID, "text": text}, timeout=5)
+        
+        if resp.status_code == 200:
+            print("DEBUG: Telegram send SUCCESS (Status 200).") # <-- NEW DEBUG
+            return True, "OK"
+        else:
+            data = resp.json()
+            error_msg = data.get("description", f"HTTP {resp.status_code}")
+            # This print is crucial for finding the specific error!
+            print(f"DEBUG: Telegram send FAILED (Status {resp.status_code}). Error: {error_msg}") # <-- NEW DEBUG
+            return False, error_msg
+    except Exception as e:
+        print(f"DEBUG: Telegram send EXCEPTION. Error: {str(e)}") # <-- NEW DEBUG
+        return False, str(e)
+
+def notify_stock(symbol, last_price, entry=None, stop_loss=None, target=None):
+    timestamp = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
+    msg = f"📢 {symbol} shortlisted!\n💵 Last: {last_price}\n⏰ Time: {timestamp}"
+    if entry: msg += f"\n🟢 Entry: {entry:.2f}"
+    if stop_loss: msg += f"\n❌ Stop-Loss: {stop_loss:.2f}"
+    if target: msg += f"\n🏆 Target: {target:.2f}"
+    # Desktop
+    try:
+        safe_notify(f"📈 NSE Picker: {symbol}", msg)
+    except Exception:
+        pass
+    # Telegram (guarded)
+    if notify_telegram:
+        ok, info = safe_telegram_send(msg)
+        if not ok:
+            st.warning(f"Telegram notify failed for {symbol}: {info}")
+
 # Use a directory for filters, not a single file
 FILTER_DIR = "filter_presets" 
 
@@ -77,8 +133,8 @@ if 'current_preset_name' not in st.session_state:
 saved_filters = load_filters(st.session_state.current_preset_name)
 
 # Initialize/Get the current filter values from saved data or a default
-default_sl_percent = saved_filters.get('sl_percent', 5.0) 
-default_target_percent = saved_filters.get('target_percent', 10.0) 
+default_sl_percent = saved_filters.get('sl_percent', 1.5) 
+default_target_percent = saved_filters.get('target_percent', 1.0) 
 
 # --- ALL DEFAULTS MUST BE LOADED HERE ---
 # Use the default value used in the sidebar for the fallback
@@ -99,152 +155,236 @@ default_notify_desktop = saved_filters.get('notify_desktop', True)
 default_notify_telegram = saved_filters.get('notify_telegram', False)
 # --- END NEW DEFAULTS ---
 
-
 # -------------------------
 # Helper / Config
 # -------------------------
-st.set_page_config(page_title="📊 NSE Intraday Stock Picker (Improved)", layout="wide")
-st.title("📈 NSE Intraday Stock Picker — Cleaner Signals")
-
-# --- FILTER WIDGETS SECTION (MOVED TO SIDEBAR) ---
-st.sidebar.markdown("### ⚙️ Filter Presets & Trade Levels")
-
-# Custom UI for Presets to allow the delete button
-st.sidebar.markdown("#### Load Saved Preset:")
-
-# Get the list of saved presets
-available_presets = get_available_presets()
-display_presets = ['Default'] + available_presets
-
-# Create a container for the selector and the delete buttons
-preset_container = st.sidebar.container()
-
-# 1. Preset Selector (simplified as a hidden widget or controlled by clicks)
-# We will use st.session_state to track the selected preset instead of st.selectbox here, 
-# to allow for the custom layout. The initial selection is already in st.session_state.current_preset_name
-
-# Display the presets with a radio button/selection and a delete button
-# Using a radio for selection makes it easy to switch, and then a button to delete.
-selected_preset_key = st.sidebar.radio(
-    "Select a preset to load:",
-    options=display_presets,
-    index=display_presets.index(st.session_state.current_preset_name) if st.session_state.current_preset_name in display_presets else 0,
-    key='preset_radio_selector',
-    help="Click on a preset to load its settings. Click the ❌ to delete it.",
+st.set_page_config(
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-# Check if the radio selection changed and trigger a rerun
-if selected_preset_key != st.session_state.current_preset_name:
-    st.session_state.current_preset_name = selected_preset_key
-    st.rerun()
+#==========================================================
+#  SIDE BAR
+#==========================================================
+# --- UTILITY FUNCTION FOR LIVE CLOCK DISPLAY ---
+def display_live_clock():
+    """Displays the current time in IST at the top."""
+    now = datetime.now(IST).strftime("%I:%M:%S %p %Z") # e.g., 03:30:15 PM IST
+    
+    # Use columns to align the time nicely
+    col_clock, col_spacer = st.columns([1, 8])
+    with col_clock:
+        # Use HTML/Markdown for a slightly larger, bold clock
+        st.sidebar.markdown(
+            f"""
+            <h1 style='text-align: center; margin-bottom: -120px; margin-top: -40px;
+            '>
+            {now}
+            </h1>
+            """, 
+            unsafe_allow_html=True
+    )
+# --- CALL THE CLOCK FUNCTION FIRST IN THE MAIN SCRIPT ---
+display_live_clock()
 
 st.sidebar.markdown("---")
 
-# 2. Add the delete button for each available preset (excluding 'Default')
-st.sidebar.markdown("#### Manage Presets:")
-for preset in available_presets:
-    col_name, col_delete = st.sidebar.columns([4, 1])
-    
-    col_name.write(f"**{preset}**")
-    
-    # Add the delete button (❌ icon)
-    with col_delete:
-        # Use a unique key for the button
-        if st.button("❌", key=f"delete_preset_{preset}", help=f"Delete '{preset}' preset"):
-            # Call the delete function
-            success, message = delete_filter(preset)
-            if success:
-                st.toast(f"Preset '{preset}' deleted successfully!", icon='✅')
-                st.session_state.current_preset_name = 'Default' # Reset to default after deletion
-                st.rerun() # Rerun to refresh the list
+#============================
+
+show_technical_predictions = st.sidebar.checkbox("Show Technical Predictions", True) # Not saved/loaded
+
+with st.sidebar.expander("⚙️ Saved Filters", expanded=False):
+
+    # Custom UI for Presets to allow the delete button
+    st.markdown("#### Load Saved filters:")
+
+    # Get the list of saved presets
+    available_presets = get_available_presets()
+    display_presets = ['Default'] + available_presets
+
+    # Create a container for the selector and the delete buttons
+    preset_container = st.sidebar.container()
+
+    # 1. Preset Selector (simplified as a hidden widget or controlled by clicks)
+    # We will use st.session_state to track the selected preset instead of st.selectbox here, 
+    # to allow for the custom layout. The initial selection is already in st.session_state.current_preset_name
+
+    # Display the presets with a radio button/selection and a delete button
+    # Using a radio for selection makes it easy to switch, and then a button to delete.
+    selected_preset_key = st.radio(
+        "Select a preset to load:",
+        options=display_presets,
+        index=display_presets.index(st.session_state.current_preset_name) if st.session_state.current_preset_name in display_presets else 0,
+        key='preset_radio_selector',
+        help="Click on a preset to load its settings. Click the 🗑️ to delete it.",
+    )
+
+    # Check if the radio selection changed and trigger a rerun
+    if selected_preset_key != st.session_state.current_preset_name:
+        st.session_state.current_preset_name = selected_preset_key
+        st.rerun()
+
+    st.markdown("---")
+
+    # 2. Add the delete button for each available preset (excluding 'Default')
+    st.markdown("#### Manage Filters:")
+    for preset in available_presets:
+        col_name, col_delete = st.columns([4, 1])
+
+        col_name.write(f"{preset}")
+
+        # Add the delete button (🗑️ icon)
+        with col_delete:
+            # Use a unique key for the button
+            if st.button("🗑️", key=f"delete_preset_{preset}", help=f"Delete '{preset}' preset"):
+                # Call the delete function
+                success, message = delete_filter(preset)
+                if success:
+                    st.toast(f"Preset '{preset}' deleted successfully!", icon='✅')
+                    st.session_state.current_preset_name = 'Default' # Reset to default after deletion
+                    st.rerun() # Rerun to refresh the list
+                else:
+                    st.error(message)
+
+#
+#Set SL and Target
+#
+with st.sidebar.expander("Set SL and Target", expanded=False):
+    # Input widgets using the loaded defaults
+    sl_percent = st.number_input(
+        "Stop Loss %", 
+        min_value=0.1, 
+        value=default_sl_percent, 
+        step=0.1, 
+        key="sl_percent_input" 
+    )
+
+    target_percent = st.number_input(
+        "Target %", 
+        min_value=0.1, 
+        value=default_target_percent, 
+        step=0.1, 
+        key="target_percent_input" 
+    )
+
+#Filters and Parameters
+
+with st.sidebar.expander("Filters & Parameters", expanded=True):
+
+    # Sidebar Controls using loaded defaults
+    use_volume = st.checkbox("📊 Use Volume Spike", default_use_volume)
+    use_breakout = st.checkbox("🚀 Use Breakout Filter", default_use_breakout)
+    use_ema_rsi = st.checkbox("📉 Use EMA+RSI Filters", default_use_ema_rsi)
+    use_rs = st.checkbox("💪 Use Relative Strength vs NIFTY", default_use_rs)
+
+    interval = st.selectbox("Intraday Interval (bars)", ["5m", "15m", "30m", "1h"], index=["5m", "15m", "30m", "1h"].index(default_interval))
+    auto_refresh_sec = st.slider("Auto refresh (seconds)", 30, 600, 180, 10) # Not saved/loaded
+    max_symbols = st.slider("Max F&O symbols to scan", 30, 150, default_max_symbols)
+    vol_zscore_threshold = st.slider("Volume z-score threshold", 1.0, 4.0, default_vol_zscore_threshold, 0.1)
+    breakout_margin_pct = st.slider("Breakout margin (%)", 0.0, 3.0, default_breakout_margin_pct, 0.1)  # e.g., 0.5% -> 1.005
+    atr_period = st.slider("ATR period", 5, 21, default_atr_period, 1)
+    atr_mult = st.slider("ATR multiplier (SL)", 0.1, 5.0, default_atr_mult, 0.1)
+    momentum_lookback = st.slider("Momentum Lookback (bars)", 2, 20, default_momentum_lookback)
+    rs_lookback = st.slider("RS lookback days", 2, 15, default_rs_lookback)
+    signal_score_threshold = st.slider("Signal score threshold", 2, 6, default_signal_score_threshold)
+
+#
+#Notification Settings
+#
+with st.sidebar.expander("Notification Settings", expanded=False):
+    notify_desktop = st.checkbox("💻 Enable Desktop Notification", default_notify_desktop)
+    notify_telegram = st.checkbox("📨 Enable Telegram Notification", default_notify_telegram)
+    BOT_TOKEN = st.text_input("Telegram Bot Token", "", type="password")
+    CHAT_ID = st.text_input("Telegram Chat ID", "")
+
+    # --- ADDED: TELEGRAM TEST BUTTON SECTION ---
+
+    st.markdown("#### Test Notifications")
+    test_message = "This is a test notification from the NSE Picker! (If you see this, it works!)"
+
+    if st.button("Test Telegram Alert 📨"):
+        if not notify_telegram or not BOT_TOKEN or not CHAT_ID:
+            st.error("Please enable Telegram notification and fill in the Bot Token/Chat ID first!")
+        else:
+            st.info("Sending test message...")
+            ok, info = safe_telegram_send(test_message)
+
+            if ok:
+                st.success("✅ Telegram Test Success! Check your chat now.")
             else:
-                st.sidebar.error(message)
+                # This will now display the exact error from Telegram
+                st.error(f"❌ Telegram Test Failed. Response: {info}")
 
-st.sidebar.markdown("---")
+    # --- SAVE BUTTON LOGIC WITH CUSTOM NAME ---
+    st.sidebar.markdown("### Save Current Settings")
+    custom_name = st.sidebar.text_input("Name for the Filter Preset", value=st.session_state.current_preset_name, max_chars=20)
 
-
-# Input widgets using the loaded defaults
-sl_percent = st.sidebar.number_input(
-    "Stop Loss %", 
-    min_value=0.1, 
-    value=default_sl_percent, 
-    step=0.1, 
-    key="sl_percent_input" 
-)
-
-target_percent = st.sidebar.number_input(
-    "Target %", 
-    min_value=0.1, 
-    value=default_target_percent, 
-    step=0.1, 
-    key="target_percent_input" 
-)
-
-st.sidebar.markdown("### Filters & Parameters")
-
-# Sidebar Controls using loaded defaults
-use_volume = st.sidebar.checkbox("📊 Use Volume Spike", default_use_volume)
-use_breakout = st.sidebar.checkbox("🚀 Use Breakout Filter", default_use_breakout)
-use_ema_rsi = st.sidebar.checkbox("📉 Use EMA+RSI Filters", default_use_ema_rsi)
-use_rs = st.sidebar.checkbox("💪 Use Relative Strength vs NIFTY", default_use_rs)
-
-interval = st.sidebar.selectbox("Intraday Interval (bars)", ["5m", "15m", "30m", "1h"], index=["5m", "15m", "30m", "1h"].index(default_interval))
-auto_refresh_sec = st.sidebar.slider("Auto refresh (seconds)", 30, 600, 180, 10) # Not saved/loaded
-max_symbols = st.sidebar.slider("Max F&O symbols to scan", 30, 150, default_max_symbols)
-vol_zscore_threshold = st.sidebar.slider("Volume z-score threshold", 1.0, 4.0, default_vol_zscore_threshold, 0.1)
-breakout_margin_pct = st.sidebar.slider("Breakout margin (%)", 0.0, 3.0, default_breakout_margin_pct, 0.1)  # e.g., 0.5% -> 1.005
-atr_period = st.sidebar.slider("ATR period", 5, 21, default_atr_period, 1)
-atr_mult = st.sidebar.slider("ATR multiplier (SL)", 0.1, 5.0, default_atr_mult, 0.1)
-momentum_lookback = st.sidebar.slider("Momentum Lookback (bars)", 2, 20, default_momentum_lookback)
-rs_lookback = st.sidebar.slider("RS lookback days", 2, 15, default_rs_lookback)
-signal_score_threshold = st.sidebar.slider("Signal score threshold", 2, 6, default_signal_score_threshold)
-
-st.sidebar.markdown("---")
-
-show_technical_predictions = st.sidebar.checkbox("🔮 Show Technical Predictions", True) # Not saved/loaded
-notify_desktop = st.sidebar.checkbox("💻 Enable Desktop Notification", default_notify_desktop)
-notify_telegram = st.sidebar.checkbox("📨 Enable Telegram Notification", default_notify_telegram)
-BOT_TOKEN = st.sidebar.text_input("Telegram Bot Token", "", type="password")
-CHAT_ID = st.sidebar.text_input("Telegram Chat ID", "")
-
-
-# --- SAVE BUTTON LOGIC WITH CUSTOM NAME ---
-st.sidebar.markdown("### Save Current Settings")
-custom_name = st.sidebar.text_input("Name for the Filter Preset", value=st.session_state.current_preset_name, max_chars=20)
-
-if st.sidebar.button(f"💾 Save as '{custom_name}'"):
-    if not custom_name or custom_name == 'Default':
-        st.sidebar.error("Please enter a valid, non-'Default' name to save your preset.")
-    else:
-        current_filters = {
-            'sl_percent': sl_percent, 
-            'target_percent': target_percent,
-            'use_volume': use_volume,
-            'use_breakout': use_breakout,
-            'use_ema_rsi': use_ema_rsi,
-            'use_rs': use_rs,
-            'interval': interval,
-            'max_symbols': max_symbols,
-            'vol_zscore_threshold': vol_zscore_threshold,
-            'breakout_margin_pct': breakout_margin_pct,
-            'atr_period': atr_period,
-            'atr_mult': atr_mult,
-            'momentum_lookback': momentum_lookback,
-            'rs_lookback': rs_lookback,
-            'signal_score_threshold': signal_score_threshold,
-            'notify_desktop': notify_desktop, 
-            'notify_telegram': notify_telegram
-        }
-        if save_filters(custom_name, current_filters):
-            st.session_state.current_preset_name = custom_name # Set new preset as active
-            st.sidebar.success(f"Preset '{custom_name}' saved successfully!")
-            st.rerun() # Rerun to refresh the selector list
+    if st.sidebar.button(f"💾 Save as '{custom_name}'"):
+        if not custom_name or custom_name == 'Default':
+            st.sidebar.error("Please enter a valid, non-'Default' name to save your preset.")
+        else:
+            current_filters = {
+                'sl_percent': sl_percent, 
+                'target_percent': target_percent,
+                'use_volume': use_volume,
+                'use_breakout': use_breakout,
+                'use_ema_rsi': use_ema_rsi,
+                'use_rs': use_rs,
+                'interval': interval,
+                'max_symbols': max_symbols,
+                'vol_zscore_threshold': vol_zscore_threshold,
+                'breakout_margin_pct': breakout_margin_pct,
+                'atr_period': atr_period,
+                'atr_mult': atr_mult,
+                'momentum_lookback': momentum_lookback,
+                'rs_lookback': rs_lookback,
+                'signal_score_threshold': signal_score_threshold,
+                'notify_desktop': notify_desktop, 
+                'notify_telegram': notify_telegram
+            }
+            if save_filters(custom_name, current_filters):
+                st.session_state.current_preset_name = custom_name # Set new preset as active
+                st.sidebar.success(f"Preset '{custom_name}' saved successfully!")
+                st.rerun() # Rerun to refresh the selector list
 
 
 
+# Initialize last_refresh_time if it doesn't exist
+if 'last_refresh_time' not in st.session_state:
+    st.session_state.last_refresh_time = datetime.now(IST).strftime("%I:%M:%S %p")
 # Auto refresh
 refresh_count = st_autorefresh(interval=auto_refresh_sec * 1000, limit=None, key="auto_refresh")
-st.markdown(f"⏰ Refreshed {refresh_count} times. Interval: {auto_refresh_sec} seconds.")
+# Update the time ONLY if the refresh_count changes (i.e., a new run starts)
+current_timestamp = datetime.now(IST).strftime("%I:%M:%S %p")
+
+# Use a separate session key to track the previous count to trigger the update
+if 'prev_refresh_count' not in st.session_state:
+    st.session_state.prev_refresh_count = 0
+    
+if refresh_count > st.session_state.prev_refresh_count:
+    # A new refresh cycle started, update the displayed time
+    st.session_state.last_refresh_time = current_timestamp
+    st.session_state.prev_refresh_count = refresh_count
+
+
+# --- DISPLAY THE UPDATED COUNTER ---
+st.markdown(
+    f"""
+    <p style='text-align: center; '>
+        ⏰ Refreshed {refresh_count} times. 
+        Interval: {auto_refresh_sec} seconds. 
+        Last Run: {st.session_state.last_refresh_time}
+    </p>
+    """, 
+    unsafe_allow_html=True
+)
+
+# --- ADDED: REFRESH NOTIFICATION ---
+if refresh_count > 0: # Avoid notifying on the very first load
+    timestamp = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
+    msg = f"Scan Refreshed at {timestamp}. Interval: {auto_refresh_sec} sec."
+    safe_notify("NSE Picker Status", msg)
+    # Don't send telegram for a simple refresh status to avoid spam
 
 # -------------------------
 # Session state defaults
@@ -312,48 +452,6 @@ def get_nifty_daily():
     except Exception:
         return pd.DataFrame()
 
-# -------------------------
-# Utility functions
-# -------------------------
-IST = pytz.timezone("Asia/Kolkata")
-
-def safe_notify(title, msg):
-    if notify_desktop:
-        try:
-            notification.notify(title=title, message=msg, timeout=6)
-        except Exception as e:
-            st.warning(f"Desktop notify error: {e}")
-
-def safe_telegram_send(text):
-    if not notify_telegram or not BOT_TOKEN or not CHAT_ID:
-        return False, "Telegram disabled or credentials missing"
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    try:
-        resp = requests.get(url, params={"chat_id": CHAT_ID, "text": text}, timeout=5)
-        if resp.status_code == 200:
-            return True, "OK"
-        else:
-            data = resp.json()
-            return False, data.get("description", f"HTTP {resp.status_code}")
-    except Exception as e:
-        return False, str(e)
-
-def notify_stock(symbol, last_price, entry=None, stop_loss=None, target=None):
-    timestamp = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
-    msg = f"📢 {symbol} shortlisted!\n💵 Last: {last_price}\n⏰ Time: {timestamp}"
-    if entry: msg += f"\n🟢 Entry: {entry:.2f}"
-    if stop_loss: msg += f"\n❌ Stop-Loss: {stop_loss:.2f}"
-    if target: msg += f"\n🏆 Target: {target:.2f}"
-    # Desktop
-    try:
-        safe_notify(f"📈 NSE Picker: {symbol}", msg)
-    except Exception:
-        pass
-    # Telegram (guarded)
-    if notify_telegram:
-        ok, info = safe_telegram_send(msg)
-        if not ok:
-            st.warning(f"Telegram notify failed for {symbol}: {info}")
 
 # -------------------------
 # Technical analysis helpers
@@ -415,17 +513,19 @@ def check_candle_patterns(df):
 # -------------------------
 # Main scan logic (improved)
 # -------------------------
-def scan_stock_improved(df, sym, nifty_df=None):
-    """
-    Returns: score (int), reasons (list), entry, stop, target, signal_dict
-    """
-    if df is None or df.empty or len(df) < 25:
-        return 0, [], None, None, None, {}
 
-    df = compute_indicators(df)
-    reasons = []
-    score = 0
+def scan_stock_improved(sym, df_stock, **kwargs):
+    # --- 1. Early validation ---
+    nifty_df = kwargs.get('nifty_df')
+    if df_stock is None or df_stock.empty or len(df_stock) < 25:
+        return 0, ["⚠️ Not enough data"], None, None, None, {}
 
+    # --- 2. Compute indicators ---
+    df = compute_indicators(df_stock)
+    if df.empty:
+        return 0, ["⚠️ Indicator computation failed"], None, None, None, {}
+
+    # --- 3. Extract latest data safely ---
     try:
         last_close = float(df["Close"].iloc[-1])
         prev_close = float(df["Close"].iloc[-2])
@@ -434,106 +534,102 @@ def scan_stock_improved(df, sym, nifty_df=None):
         vol_std = float(df["VolStd20"].iloc[-1]) if not np.isnan(df["VolStd20"].iloc[-1]) else 0.0
         last_atr = float(df["ATR"].iloc[-1]) if not np.isnan(df["ATR"].iloc[-1]) else 0.0
     except Exception:
-        return 0, [], None, None, None, {}
+        return 0, ["⚠️ Data extraction failed"], None, None, None, {}
 
-    # --- Breakout detection with margin ---
-    breakout_ok = False
-    try:
-        rolling_high = df["High"].rolling(momentum_lookback).max() # Use 'High' column for a true price barrier
-        # ensure there are enough values
-        if len(rolling_high) >= 3:
-            prev_high = float(rolling_high.iloc[-2])
-            prev_prev_high = float(rolling_high.iloc[-3]) if len(rolling_high) >= 3 else prev_high
-            margin = 1.0 + (breakout_margin_pct / 100.0)
-            brk1 = last_close > (prev_high * margin)
-            brk2 = prev_close > (prev_prev_high * margin)
-            breakout_ok = (brk1 and brk2 and (last_close > prev_close))
-            if breakout_ok:
-                reasons.append(f"🚀 Breakout confirmed (> {breakout_margin_pct:.2f}% above lookback high)")
-                score += 2  # breakout is worth 2 points
-    except Exception:
-        breakout_ok = False
+    reasons = []
+    score = 0
 
-    # --- Volume z-score spike ---
-    vol_spike_ok = False
-    if use_volume and avg_vol > 0 and vol_std > 0:
-        try:
-            z = (last_vol - avg_vol) / vol_std
-            if np.isfinite(z) and z >= vol_zscore_threshold:
-                vol_spike_ok = True
-                reasons.append(f"📊 Volume z-score {z:.2f} >= {vol_zscore_threshold}")
-                score += 1
-        except Exception:
-            vol_spike_ok = False
-
-    # --- EMA check ---
+    # --- 4. EMA + RSI Filter ---
     ema_ok = False
-    try:
-        ema_ok = last_close > df["EMA20"].iloc[-1]
-        if ema_ok:
-            reasons.append("📈 Price above EMA20")
-            score += 1
-    except Exception:
-        ema_ok = False
-
-    # --- RSI cross confirmation ---
     rsi_ok = False
-    try:
-        rsi_series = df["RSI10"].dropna().values
-        if len(rsi_series) >= 2:
-            rsi_cross = (rsi_series[-2] < 50) and (rsi_series[-1] > 55)
-            rsi_simple = rsi_series[-1] > 55
-            if rsi_cross:
-                reasons.append("💪 RSI crossed 50→55 (momentum shift)")
-                rsi_ok = True
+    if use_ema_rsi:
+        try:
+            ema_ok = last_close > df["EMA20"].iloc[-1]
+            if ema_ok:
+                reasons.append("📈 Price above EMA20")
                 score += 1
-            elif rsi_simple and not rsi_ok:
-                # reward simple RSI>55 too, but lower priority than cross
-                reasons.append("💪 RSI > 55")
-                rsi_ok = True
-                score += 1
-    except Exception:
-        rsi_ok = False
 
-    # --- Candle patterns
-    patterns = check_candle_patterns(df)
-    if patterns:
-        reasons.extend(patterns)
-        # give patterns a small boost (0.5 rounded by adding 1 only when score beneficial)
-        score += 1
+            rsi7_val = df["RSI7"].iloc[-1]
+            if np.isfinite(rsi7_val):
+                if rsi7_val >= 80:
+                    reasons.append("💥 RSI (7) > 80 (Overbought)")
+                    score += 1
+                elif rsi7_val <= 20:
+                    reasons.append("💥 RSI (7) < 20 (Oversold)")
+                    score += 1
+        except Exception:
+            reasons.append("⚠️ EMA/RSI calc failed")
+    else:
+        reasons.append("⚪ EMA+RSI filter skipped (unchecked)")
 
-    # --- Relative Strength vs NIFTY
+    # --- 5. Breakout Filter ---
+    breakout_ok = False
+    if use_breakout:
+        try:
+            rolling_high = df["High"].rolling(momentum_lookback).max()
+            if len(rolling_high) >= 3:
+                prev_high = float(rolling_high.iloc[-2])
+                margin = 1.0 + (breakout_margin_pct / 100.0)
+                if last_close > (prev_high * margin) and last_close > prev_close:
+                    breakout_ok = True
+                    reasons.append(f"🚀 Breakout > {breakout_margin_pct:.2f}% above lookback high")
+                    score += 2
+        except Exception:
+            reasons.append("⚠️ Breakout calc failed")
+    else:
+        reasons.append("⚪ Breakout filter skipped (unchecked)")
+
+    # --- 6. Volume Spike Filter ---
+    vol_spike_ok = False
+    if use_volume:
+        if avg_vol > 0 and vol_std > 0:
+            try:
+                z = (last_vol - avg_vol) / vol_std
+                if np.isfinite(z) and z >= vol_zscore_threshold:
+                    vol_spike_ok = True
+                    reasons.append(f"📊 Volume spike detected (z={z:.2f})")
+                    score += 1
+            except Exception:
+                reasons.append("⚠️ Volume check failed")
+    else:
+        reasons.append("⚪ Volume filter skipped (unchecked)")
+
+    # --- 7. Relative Strength Filter ---
     rs_ok = False
     if use_rs and nifty_df is not None and not nifty_df.empty:
         try:
-            # percent change over rs_lookback days (using close)
             stock_pct = df["Close"].pct_change(rs_lookback).iloc[-1]
             nifty_pct = nifty_df["Close"].pct_change(rs_lookback).iloc[-1]
             if np.isfinite(stock_pct) and np.isfinite(nifty_pct) and (stock_pct - nifty_pct) > 0:
                 rs_ok = True
-                reasons.append("📊 Outperforming NIFTY")
+                reasons.append("💪 Outperforming NIFTY")
                 score += 1
         except Exception:
-            rs_ok = False
+            reasons.append("⚠️ RS calc failed")
+    else:
+        reasons.append("⚪ RS filter skipped (unchecked)")
 
-    # --- Compose final decision
-    # We allow disablement of individual filters. However, scoring handles final selection.
-    # The signal strength threshold is configured by user (signal_score_threshold)
-    entry_price = None
-    stop_loss = None
-    target_price = None
+    # --- 8. Candle Patterns ---
+    patterns = check_candle_patterns(df)
+    if patterns:
+        reasons.extend(patterns)
+        score += 1
 
-    if score >= signal_score_threshold:
-        entry_price = last_close
-        if last_atr and last_atr > 0:
-            stop_loss = entry_price - (atr_mult * last_atr)
-            target_price = entry_price + 2 * (entry_price - stop_loss)
-        # if ATR not available, use simple percent stops
-        else:
-            stop_loss = entry_price * 0.98
-            target_price = entry_price * 1.04
+    # --- 9. Entry / SL / Target ---
+    entry_price = last_close
+    if last_atr and last_atr > 0:
+        stop_loss = entry_price - (atr_mult * last_atr)
+        target_price = entry_price + 2 * (entry_price - stop_loss)
+    else:
+        stop_loss = entry_price * 0.98
+        target_price = entry_price * 1.04
 
-    # Collect signal metadata
+    # --- 10. If all filters off, give base score ---
+    if not any([use_volume, use_breakout, use_ema_rsi, use_rs]):
+        reasons.append("🕵️ Filter-free mode active (all filters off)")
+        score = 1
+
+    # --- 11. Return ---
     signal = {
         "score": score,
         "breakout_ok": breakout_ok,
@@ -546,10 +642,11 @@ def scan_stock_improved(df, sym, nifty_df=None):
 
     return score, reasons, entry_price, stop_loss, target_price, signal
 
+
 # -------------------------
 # Scan Universe (batch)
 # -------------------------
-st.subheader("🚀 Scanning F&O Stocks (Improved Signals)")
+st.subheader("🚀 Scanning Stocks")
 
 fo_symbols = get_fo_symbols(max_symbols)
 tickers = [f"{s}.NS" for s in fo_symbols]
@@ -605,28 +702,74 @@ def check_watchlist_hits(df_batch):
 # ... (after your main for loop and the progress.empty() call)
 # ... (and after the refresh confirmation in part 1)
 
-# df_batch can be structured as either single ticker DataFrame (if one) or multiindex columns when group_by used.
-def extract_symbol_df(df_batch_local, sym):
-    # sym e.g., "RELIANCE"
+import pandas as pd
+
+def extract_symbol_df(df_batch_local: pd.DataFrame, sym: str) -> pd.DataFrame:
+    """Return a DataFrame for `sym` from a yfinance batch DataFrame.
+    Handles:
+      - single-ticker DataFrame with columns like ['Open','High','Close',...]
+      - multiindex DataFrame where first level is ticker and second is OHLC (group_by='ticker')
+    Returns empty DataFrame if symbol not found or input is empty.
+    """
     if df_batch_local is None or df_batch_local.empty:
         return pd.DataFrame()
-    # When group_by='ticker' and multiple tickers, df_batch has top-level columns = tickers
-    if isinstance(df_batch_local.columns, pd.MultiIndex):
-        if sym in df_batch_local.columns.levels[0]:
+
+    # normalize symbol candidates (case-insensitive)
+    candidates = {sym, f"{sym}.NS"}
+
+    cols = df_batch_local.columns
+
+    # --- MultiIndex case (typical when yfinance group_by='ticker') ---
+    if isinstance(cols, pd.MultiIndex):
+        # get first level (tickers) and second level (fields like Open/Close)
+        first_level = cols.get_level_values(0).astype(str)
+        second_level = cols.get_level_values(1).astype(str)
+
+        first_level_unique = pd.Index(first_level).unique()
+        first_level_lc = {s.lower() for s in first_level_unique}
+
+        # Try to match ticker (case-insensitive)
+        for cand in candidates:
+            cand_lc = cand.lower()
+            if cand_lc in first_level_lc:
+                # find actual string as present in the MultiIndex (preserve original casing)
+                match = next((x for x in first_level_unique if x.lower() == cand_lc), None)
+                if match is not None:
+                    try:
+                        return df_batch_local[match].copy()
+                    except KeyError:
+                        # defensive: try continue if something odd happens
+                        continue
+
+        # Fallback: maybe it's a multiindex but only one ticker and you want its columns
+        # Detect if second-level contains OHLC names
+        second_level_lc = {s.lower() for s in second_level}
+        if {"open", "high", "close"}.intersection(second_level_lc):
+            # return the first ticker block
             try:
-                df_sym = df_batch_local[sym].copy()
-                return df_sym
+                ticker0 = first_level_unique[0]
+                return df_batch_local[ticker0].copy()
             except Exception:
                 return pd.DataFrame()
-        else:
-            return pd.DataFrame()
-    else:
-        # Single-structure DataFrame (maybe only one ticker was downloaded)
-        # Try to detect if the DataFrame corresponds to the symbol (match in columns or index)
-        # Best-effort: if first column name contains typical OHLC
-        if any(c.lower() in [col.lower() for col in df_batch_local.columns] for c in ["Open", "High", "Close"]):
-            return df_batch_local.copy()
+
         return pd.DataFrame()
+
+    # --- Single-level columns (no MultiIndex) ---
+    # Normalize column names to strings and lowercase
+    lower_cols = [str(c).lower() for c in cols]
+
+    # If typical OHLC columns are present, assume this DataFrame is already per-symbol
+    if {"open", "high", "close"}.intersection(lower_cols):
+        return df_batch_local.copy()
+
+    # maybe column names include the symbol as a prefix/suffix (e.g., "RELIANCE.Open")
+    for cand in candidates:
+        cand_lc = cand.lower()
+        if any(cand_lc in c for c in lower_cols):
+            # assume whole DataFrame applies to that symbol
+            return df_batch_local.copy()
+
+    return pd.DataFrame()
 
 for i, sym in enumerate(fo_symbols):
     status_text.text(f"Scanning {sym} ({i+1}/{len(fo_symbols)})")
@@ -634,35 +777,57 @@ for i, sym in enumerate(fo_symbols):
 
     df_sym = extract_symbol_df(df_batch, sym)
     
-    # 1. Check for missing data (This handles the case where yfinance fails or data is too short)
-    if df_sym is None or df_sym.empty or len(df_sym) < momentum_lookback:
-        # Using 'sym' instead of the undefined 'symbol'
-        print(f"Skipping {sym}: Data is missing or too short.") 
-        continue
+    # Inside the loop: for i, sym in enumerate(fo_symbols):
+    # ... after the line: df_sym = extract_symbol_df(df_batch, sym)
 
-    # Note: Using 'sym' and 'df_sym' for printing the last bar info
-    print(f"Scanning the last bar for {sym}. Date is: {df_sym.index[-1].date()}")
-    
-    # Run improved scan
-    score, reasons, entry, stop, target, signal = scan_stock_improved(df_sym, sym, nifty_df=nifty_df)
-    if score >= signal_score_threshold:
-        last_close = float(df_sym["Close"].iloc[-1])
+    # --- Check for No Data (Robustly handles None or empty DataFrame) ---
+    if df_sym is None or df_sym.empty or len(df_sym) < 25:
+        # --- ADD THIS LINE FOR DEBUGGING ---
+        print(f"Skipping {sym}: Data is missing/short (len={len(df_sym) if df_sym is not None else 0})")
+        # ------------------------------------
+
+        # 🌟 NEW: Append a "No Data" record to the list for debugging 🌟
         candidates.append({
             "Symbol": sym,
-            "Score": score,
-            "Last Close": last_close,
-            "Entry": entry,
-            "Stop Loss": stop,
-            "Target": target,
-            "Reasons": "; ".join(reasons),
-            "Signal": signal
+            "Score": 0,
+            "Last Close": "N/A",
+            "Entry": "N/A",
+            "Stop Loss": "N/A",
+            "Target": "N/A",
+            "Reasons": "⚠️ No data available (Market closed or fetch failed)",
+            "Signal": "N/A"
         })
-        shortlisted_stocks.append(sym)
+        continue # Skip the rest of the logic for this symbol
 
-        # Notify only once per day
+    # --- Data is good, now run the scanner and append results ---
+    # This line is now only run if data is good!
+    score, reasons, entry, stop, target, signal = scan_stock_improved(sym, df_sym, nifty_df=nifty_df)
+
+    # Safely read the last close price (This will no longer crash)
+    last_close = float(df_sym["Close"].iloc[-1])
+
+    # Append the full score for the scoreboard
+    candidates.append({
+        "Symbol": sym,
+        "Score": score,
+        "Last Close": last_close,
+        "Entry": entry,
+        "Stop Loss": stop,
+        "Target": target,
+        "Reasons": reasons,
+        #"Signal": signal
+    })
+
+    # --- Notification Logic (STILL CONDITIONAL) ---
+    if score >= signal_score_threshold:
+        shortlisted_stocks.append(sym)
+        
+        # --- NEW LOGIC: Check if already notified for this stock today ---
         if sym not in st.session_state.notified_today:
             notify_stock(sym, last_close, entry, stop, target)
-            st.session_state.notified_today.add(sym)
+            st.session_state.notified_today.add(sym) # Mark as notified
+            
+        # The loop continues...
 
 progress.empty()
 status_text.text("✅ Scan complete!")
@@ -679,20 +844,92 @@ if not candidates:
     safe_telegram_send("✅ Scan finished. No new stocks meet the criteria.")
 
 # Display results
+
 if candidates:
-    st.success(f"✅ Found {len(candidates)} candidates (score threshold: {signal_score_threshold})")
-    df_candidates = pd.DataFrame(candidates).set_index("Symbol").sort_values(by="Score", ascending=False)
-    st.dataframe(df_candidates)
-    # Download button
-    st.download_button(
-        "💾 Download candidates CSV",
-        df_candidates.to_csv(index=True),
-        file_name=f"candidates_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}.csv",
-        mime="text/csv"
-    )
+    with st.expander("📈Shortlisted Stocks", expanded=True): 
+        df_candidates = pd.DataFrame(candidates).set_index("Symbol").sort_values(by="Score", ascending=False)
+        qualified_count = len(df_candidates[df_candidates['Score'] >= signal_score_threshold])
+        st.success(f"✅ Scanned {len(df_candidates)} stocks. **{qualified_count}** stocks meet the threshold of {signal_score_threshold}.")
+        df_candidates = pd.DataFrame(candidates).set_index("Symbol").sort_values(by="Score", ascending=False)
+        st.dataframe(df_candidates)
+        # Download button
+        st.download_button(
+            "💾 Download candidates CSV",
+            df_candidates.to_csv(index=True),
+            file_name=f"candidates_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            # 🌟 Add this unique key! 🌟
+            key="candidates_download_2" 
+        )
 else:
     st.info("⚠️ No candidates found this round.")
+# # -------------------------
+# # Technical Predictions (reuse batch data where possible)
+# # -------------------------
+# if show_technical_predictions:
+#     with st.expander("📈 Technical Predictions for Shortlisted Stocks", expanded=True): 
+#         # All the code below MUST be correctly indented (4 spaces/one tab)
+        
+#         # --- Streamlit Display Section ---
+#         if candidates:
+#             st.success(f"✅ Found {len(candidates)} candidates (score threshold: {signal_score_threshold})")
+            
+#             # This line is correct, it defines df_candidates
+#             df_candidates = pd.DataFrame(candidates).set_index("Symbol").sort_values(by="Score", ascending=False)
+            
+#             # The simple st.dataframe is redundant, delete it or skip over it
+#             # st.dataframe(df_candidates)
+            
+#             # Download button (Line 727)
+#             st.download_button(
+#                 "💾 Download candidates CSV",
+#                 df_candidates.to_csv(index=True),
+#                 file_name=f"candidates_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}.csv",
+#                 mime="text/csv",
+#                 # 🌟 Add this unique key! 🌟
+#                 key="candidates_download_1" 
+#             )
+    
+#  # 💡 START OF NEW/MOVED CODE BLOCK 💡
+    
+#     # st.subheader(f"🚀 Scanner Picks ({len(df_candidates)} Stocks Ticking!)") # <--- This line is now replaced by the expander
 
+#     # --- START EXPANDER HERE ---
+#     # The title of the expander replaces the subheader
+#     with st.expander(f"🚀 Scanner Picks ({len(df_candidates)} Stocks Ticking!) - Click to Expand", expanded=False):
+#         # EVERYTHING BELOW THIS LINE MUST BE INDENTED
+        
+#         # Format the 'Reasons' list into a comma-separated string for display
+#         df_candidates['Confluence Tags'] = df_candidates['Reasons'].apply(lambda x: " | ".join(x) if isinstance(x, list) else x)
+        
+#         # Select and display the relevant columns
+#         display_cols = [
+#             'Score', 
+#             'Confluence Tags',
+#             #'Signal', 
+#             'Entry', 
+#             'Stop Loss', 
+#             'Target'
+#         ]
+        
+#         # Display the new table structure
+#         st.dataframe(
+#             df_candidates[display_cols],
+#             column_config={
+#                 "Symbol": "Stock",
+#                 "Confluence Tags": st.column_config.ListColumn(
+#                     "Why it Ticks",
+#                     help="A list of technical factors satisfied by the stock.",
+#                 ),
+#             },
+#             use_container_width=True
+#         )
+#     # --- END EXPANDER HERE ---
+    
+# # The 'else' block continues correctly
+# else:
+#     st.info("⚠️ No candidates found this round.")
+# # ...
 # -------------------------
 # Technical Predictions (reuse batch data where possible)
 # -------------------------
@@ -753,152 +990,160 @@ if show_technical_predictions:
 # -------------------------
 # Manual Analyzer (uses batch if possible)
 # -------------------------
-st.subheader("📝 Manual Stock Analyzer (Multiple Stocks)")
-manual_symbols = st.text_area("Enter stock symbols separated by commas (e.g., RELIANCE,TCS,INFY)")
-manual_list = [s.strip().upper() for s in manual_symbols.split(",") if s.strip()] if manual_symbols else []
+with st.expander("📝 Manual Stock Analyzer (Multiple Stocks)", expanded=False): 
+    manual_symbols = st.text_area("Enter stock symbols separated by commas (e.g., RELIANCE,TCS,INFY)")
+    manual_list = [s.strip().upper() for s in manual_symbols.split(",") if s.strip()] if manual_symbols else []
 
-for idx, manual_symbol in enumerate(manual_list): # <--- THE LOOP START
-    # Try find in batch first; otherwise download single symbol (cached)
-    df_manual = extract_symbol_df(df_batch, manual_symbol)
-    if df_manual is None or df_manual.empty:
-        # fallback to single download (cached)
-        @st.cache_data(ttl=300)
-        def get_single(sym, interval_local):
-            try:
-                dd = yf.download(f"{sym}.NS", period="5d", interval=interval_local, progress=False)
-                return dd
-            except Exception:
-                return pd.DataFrame()
-        df_manual = get_single(manual_symbol, interval)
+    for idx, manual_symbol in enumerate(manual_list): # <--- THE LOOP START
+        # Try find in batch first; otherwise download single symbol (cached)
+        df_manual = extract_symbol_df(df_batch, manual_symbol)
+        if df_manual is None or df_manual.empty:
+            # fallback to single download (cached)
+            @st.cache_data(ttl=300)
+            def get_single(sym, interval_local):
+                try:
+                    dd = yf.download(f"{sym}.NS", period="5d", interval=interval_local, progress=False)
+                    return dd
+                except Exception:
+                    return pd.DataFrame()
+            df_manual = get_single(manual_symbol, interval)
 
-    score, reasons, entry, stop_loss, target, signal = scan_stock_improved(df_manual, manual_symbol, nifty_df=nifty_df)
-    
-    # --- Display Stock Details (Moved inside the loop) ---
-    if df_manual is not None and not df_manual.empty:
-        last_price = float(df_manual["Close"].iloc[-1])
-        st.write(f"📌 **{manual_symbol}** — Score: {score}")
-        st.write(f"💵 Last: {last_price:.2f} | 🟢 Entry: {entry if entry else 'N/A'} | ❌ Stop: {stop_loss if stop_loss else 'N/A'} | 🏆 Target: {target if target else 'N/A'}")
-        st.write("**Filters Passed:**", "✅ Yes" if score >= signal_score_threshold else "❌ No")
-        st.write("**Why:**")
-        if reasons:
-            for r in reasons:
-                st.markdown(f"- {r}")
-        else:
-            st.write("Did not meet criteria.")
-            
-        with st.expander("View Fundamentals"):
-            try:
-                ticker = yf.Ticker(manual_symbol + ".NS")
-                info = ticker.info
-                st.json({
-                    "PE Ratio": info.get("trailingPE", "N/A"),
-                    "EPS": info.get("trailingEps", "N/A"),
-                    "Market Cap": info.get("marketCap", "N/A"),
-                    "Sector": info.get("sector", "N/A"),
-                    "Industry": info.get("industry", "N/A")
-                })
-            except Exception:
-                st.write("Fundamentals not available.")
-                
-        if score >= signal_score_threshold:
-            if manual_symbol not in st.session_state.notified_today:
+        score, reasons, entry, stop_loss, target, signal = scan_stock_improved(manual_symbol, df_manual, nifty_df=nifty_df)
+
+        reasons_str = " | ".join(reasons)
+
+        # --- Display Stock Details (Moved inside the loop) ---
+        if df_manual is not None and not df_manual.empty:
+            last_price = float(df_manual["Close"].iloc[-1])
+            st.write(f"📌 **{manual_symbol}** — Score: {score} **|** **Reasons:** {reasons_str if reasons_str else 'Did not meet criteria.'}")
+            st.write(f"💵 Last: {last_price:.2f} | 🟢 Entry: {entry if entry else 'N/A'} | ❌ Stop: {stop_loss if stop_loss else 'N/A'} | 🏆 Target: {target if target else 'N/A'}")
+            st.write("**Filters Passed:**", "✅ Yes" if score >= signal_score_threshold else "❌ No")
+
+            with st.expander("View Fundamentals"):
+                try:
+                    ticker = yf.Ticker(manual_symbol + ".NS")
+                    info = ticker.info
+                    st.json({
+                        "PE Ratio": info.get("trailingPE", "N/A"),
+                        "EPS": info.get("trailingEps", "N/A"),
+                        "Market Cap": info.get("marketCap", "N/A"),
+                        "Sector": info.get("sector", "N/A"),
+                        "Industry": info.get("industry", "N/A")
+                    })
+                except Exception:
+                    st.write("Fundamentals not available.")
+
+            if score >= signal_score_threshold:
+                # The new logic: Always notify if score threshold is met, regardless of having been notified before.
                 notify_stock(manual_symbol, last_price, entry, stop_loss, target)
-                st.session_state.notified_today.add(manual_symbol)
-        
-        # --- Add to Watchlist Button and Logic (FALLBACK FIX IS HERE, inside the loop) ---
-        if manual_symbol in st.session_state.watchlist:
-            st.button("Added to Watchlist!", key=f"added_manual_{manual_symbol}_{idx}", disabled=True)
-        else:
-            if st.button("Add to Watchlist", key=f"add_manual_{manual_symbol}_{idx}"):
-                
-                # Check if signal prices are None (meaning score was too low)
-                if entry is None:
-                    # Fallback logic to calculate prices when score is too low
-                    current_price = float(df_manual["Close"].iloc[-1])
-                    entry_to_save = current_price
-                    sl_to_save = current_price * 0.98
-                    target_to_save = current_price * 1.04
-                else:
-                    # Use signal prices if available
-                    entry_to_save = entry
-                    sl_to_save = stop_loss
-                    target_to_save = target
-                    
-                st.session_state.watchlist[manual_symbol] = {
-                    "entry": entry_to_save,
-                    "sl": sl_to_save,
-                    "target": target_to_save,
-                    "status": "Active"
-                }
-                st.success(f"Added {manual_symbol} to watchlist with{' default' if entry is None else ''} trade levels!")
-    # --- END of Manual Analyzer loop ---
+
+            # --- Add to Watchlist Button and Logic (FALLBACK FIX IS HERE, inside the loop) ---
+            if manual_symbol in st.session_state.watchlist:
+                st.button("Added to Watchlist!", key=f"added_manual_{manual_symbol}_{idx}", disabled=True)
+            else:
+                if st.button("Add to Watchlist", key=f"add_manual_{manual_symbol}_{idx}"):
+
+                    # Check if signal prices are None (meaning score was too low)
+                    if entry is None:
+                        # Fallback logic to calculate prices when score is too low
+                        current_price = float(df_manual["Close"].iloc[-1])
+                        entry_to_save = current_price
+                        sl_to_save = current_price * 0.98
+                        target_to_save = current_price * 1.04
+                    else:
+                        # Use signal prices if available
+                        entry_to_save = entry
+                        sl_to_save = stop_loss
+                        target_to_save = target
+
+                    st.session_state.watchlist[manual_symbol] = {
+                        "entry": entry_to_save,
+                        "sl": sl_to_save,
+                        "target": target_to_save,
+                        "status": "Active"
+                    }
+                    st.success(f"Added {manual_symbol} to watchlist with{' default' if entry is None else ''} trade levels!")
+        # --- END of Manual Analyzer loop ---
 
 # -------------------------
 # Watchlist UI
 # -------------------------
-st.subheader("📑 Watchlist & Alerts")
-st.markdown("<div class='watchlist-container'>", unsafe_allow_html=True)
+# st.subheader("📑 Watchlist & Alerts") <-- DELETED
 
-# ADD THE HEADER ROW HERE 
-col1, col2, col3, col4, col5, col6 = st.columns([3, 1, 1, 1, 1, 1])
-with col1:
-    st.markdown("**Symbol**")
-with col2:
-    st.markdown("**Entry**")
-with col3:
-    st.markdown("**Stop Loss**")
-with col4:
-    st.markdown("**Target**")
-with col5:
-    st.markdown("**Status**")
-with col6:
-    st.markdown("**Action**") # A header for the remove button
+# --- START EXPANDER HERE ---
+# The title of the expander replaces the subheader
+with st.expander("📑 Watchlist & Alerts - Click to manage trades", expanded=False):
 
-# Loop to display Watchlist items
-remove_keys = []
-for sym, info in st.session_state.watchlist.items():
-    # use batch intraday (1d period) if available; fallback quick fetch
-    try:
-        df_watch = extract_symbol_df(df_batch, sym)
-        if df_watch is None or df_watch.empty:
-            df_watch = get_batch_price_data([f"{sym}.NS"], "5m")
-            df_watch = extract_symbol_df(df_watch, sym)
-    except Exception:
-        df_watch = pd.DataFrame()
+    st.markdown("<div class='watchlist-container'>", unsafe_allow_html=True)
 
-    curr_price = float(df_watch['Close'].iloc[-1]) if df_watch is not None and not df_watch.empty else None
-    
-    # Get values, defaulting to 'N/A' if missing
-    entry_val = info.get("entry", "N/A")
-    sl_val = info.get("sl", "N/A")
-    tgt_val = info.get("target", "N/A")
-    status = info.get("status", "Active")
-    
-    # Format the values for display (Use '.2f' for 2 decimal places)
-    # Check if the value is a number (float or int) before formatting
-    entry = f"{entry_val:.2f}" if isinstance(entry_val, (float, int)) else entry_val
-    sl = f"{sl_val:.2f}" if isinstance(sl_val, (float, int)) else sl_val
-    tgt = f"{tgt_val:.2f}" if isinstance(tgt_val, (float, int)) else tgt_val
-
+    # ADD THE HEADER ROW HERE 
     col1, col2, col3, col4, col5, col6 = st.columns([3, 1, 1, 1, 1, 1])
     with col1:
-        st.markdown(f"**{sym}**")
+        st.markdown("**Symbol**")
     with col2:
-        st.markdown(f"{entry}")
+        st.markdown("**Entry**")
     with col3:
-        st.markdown(f"{sl}")
+        st.markdown("**Stop Loss**")
     with col4:
-        st.markdown(f"{tgt}")
+        st.markdown("**Target**")
     with col5:
-        st.markdown(f"{status}")
+        st.markdown("**Status**")
     with col6:
-        # --- NEW CALLBACK BUTTON ---
-        st.button(
-            "Remove", 
-            key=f"remove_{sym}", 
-            on_click=remove_from_watchlist, # Calls the function immediately
-            args=(sym,)                     # Passes the stock symbol to the function
-        )
+        st.markdown("**Action**") # A header for the remove button
 
-st.markdown("</div>", unsafe_allow_html=True)
-st.info("Page auto-refresh will re-check alerts and prices.")
+    # Loop to display Watchlist items
+    remove_keys = []
+    for sym, info in st.session_state.watchlist.items():
+        # use batch intraday (1d period) if available;
+    # ... The entire loop logic (including the columns and buttons) goes here
+        try:
+            df_watch = extract_symbol_df(df_batch, sym)
+            if df_watch is None or df_watch.empty:
+                df_watch = get_batch_price_data([f"{sym}.NS"], "5m")
+                df_watch = extract_symbol_df(df_watch, sym)
+        except Exception:
+            df_watch = pd.DataFrame()
+
+        curr_price = float(df_watch['Close'].iloc[-1]) if df_watch is not None and not df_watch.empty else None
+        
+        # 
+    # Get values, defaulting to 'N/A' if missing
+        entry_val = info.get("entry", "N/A")
+        sl_val = info.get("sl", "N/A")
+        tgt_val = info.get("target", "N/A")
+        status = info.get("status", "Active")
+
+        # Format the values for display (Use '.2f' for 2 decimal places)
+        # Check if the value is a number (float or int) before formatting
+        entry = f"{entry_val:.2f}" if isinstance(entry_val, (float, int)) else entry_val
+        sl = f"{sl_val:.2f}" if isinstance(sl_val, (float, int)) else sl_val
+        tgt = f"{tgt_val:.2f}" if isinstance(tgt_val, (float, int)) else tgt_val # <-- FIXED: Now a single, complete line
+
+        col1, col2, col3, col4, col5, col6 = st.columns([3, 1, 1, 1, 1, 1])
+        with col1:
+            st.markdown(f"**{sym}**")
+        with col2:
+            st.markdown(f"{entry}")
+        with col3:
+            st.markdown(f"{sl}")
+        with col4:
+            st.markdown(f"{tgt}")
+        with col5:
+            st.markdown(f"{status}")
+        with col6:
+            # 
+    # --- NEW CALLBACK BUTTON ---
+            st.button(
+                "Remove", 
+                key=f"remove_{sym}", 
+                on_click=remove_from_watchlist, # Calls the function immediately
+                args=(sym,)                     # Passes the stock symbol to the function
+        
+       )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.info("Page auto-refresh will re-check alerts and prices.")
+
+st.sidebar.markdown("---")    
+st.sidebar.markdown("Happy Trading!!! -✏️ Vijay S")
+# --- END EXPANDER HERE ---

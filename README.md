@@ -1,89 +1,91 @@
-# NSE Intraday Stock Picker
+-----
 
-## 🧪 Preset Test Combinations
+# 🚀 Automated Intraday Stock Picker & Notifier (NSE)
 
-The app provides **12 ready-to-use test combos** to cover different intraday trading scenarios.  
+An advanced, real-time stock screener built with Python and Streamlit to find high-probability intraday trading candidates on the NSE F\&O segment.
 
-| # | Name | Interval | Filters | Target Type | Notes |
-|---|------|---------|--------|------------|------|
-| 1 | Aggressive 5m All Filters | 5m | All True | ATR-based | Very sensitive, all filters enabled for high-quality signals |
-| 2 | 5m Volume+Breakout+EMA-RSI | 5m | Volume, Breakout, EMA-RSI | Fixed % | Moderate aggressiveness, volume spike + breakout + trend |
-| 3 | 5m EMA-RSI only | 5m | EMA-RSI | Fixed Rs | Trend-only, safer intraday setup |
-| 4 | 15m All Filters | 15m | All True | ATR-based | Standard intraday, smoother than 5m |
-| 5 | 15m Vol+ATR+RS | 15m | Volume, ATR, RS | Fixed % | Mid-volatility, combines momentum and strength |
-| 6 | 15m EMA-RSI+Breakout | 15m | EMA-RSI + Breakout | Fixed Rs | Trend-following + breakout, moderate safety |
-| 7 | 30m EMA-RSI only | 30m | EMA-RSI | ATR-based | Slower trend-following |
-| 8 | 30m EMA-RSI+RS | 30m | EMA-RSI + RS | Fixed % | Trend + relative strength, moderate risk |
-| 9 | 30m ATR+Breakout | 30m | ATR + Breakout | Fixed Rs | Momentum breakouts for larger moves |
-| 10 | 1h EMA-RSI+RS | 1h | EMA-RSI + RS | ATR-based | Long intraday, slower signal, trend-confirmed |
-| 11 | 1h EMA-RSI only | 1h | EMA-RSI | Fixed % | Minimal filters, selective setup |
-| 12 | 5m Aggressive Max Sensitivity | 5m | All True | Fixed % | Aggressive breakout + volume + ATR, max sensitivity |
+| Feature | Status |
+| :--- | :--- |
+| **Technology** | Python, Streamlit, Pandas, TA-Lib |
+| **Purpose** | **Confluence-Based Intraday Signals** |
+| **Trade Management** | Volatility-Adjusted SL/Target (ATR) |
+| **Alerts** | Desktop & Telegram |
 
-### 🔹 Notes:
-- **Intervals:** 5m = sensitive, 15m = standard, 30m = slower, 1h = very selective  
-- **Filters:** Volume Spike, ATR Breakout, EMA-RSI Trend, Technical Breakout, Relative Strength  
-- **Profit Targets:**  
-  - ATR-based → adapts to volatility  
-  - Fixed % → fixed percentage of entry price  
-  - Fixed Rs → fixed points amount for target  
-- These presets allow **fast testing of multiple scenarios** without manually adjusting sliders or checkboxes.
+-----
 
+## ✨ Core Logic: Confluence Scoring
 
-### 🧠 Technical Prediction Module
+The picker uses a powerful **Confluence Scoring** system—meaning a stock must pass *multiple* independent technical "tests" at the same time to qualify. It's like a job interview where the candidate needs high marks from five different managers\!
 
-If you enable **“Show Technical Predictions”** from the sidebar,  
-the app analyzes shortlisted stocks for:
+### 1\. The Scoring System
+
+  * Each active filter (e.g., Volume, RSI, Breakout) acts as a test.
+  * If a stock passes a test, it receives **+1 Score**.
+  * The stock is shortlisted only if its **Total Score** meets or exceeds the **Signal Score Threshold** set in the sidebar.
+
+### 2\. The Scoreboard (Main Filters)
+
+The following criteria are used to build the final score for each stock:
+
+| Filter / Indicator | Condition For Pick | Purpose |
+| :--- | :--- | :--- |
+| **Volume Spike** | Current volume \> **20-bar average volume × Multiplier** | Identifies sudden institutional interest/fresh money entry. |
+| **ATR Breakout** | **ATR \> Percentile Threshold** | Ensures the stock is volatile enough *right now* to give an intraday move. |
+| **Relative Strength** | `% change stock close > % change NIFTY close` | Selects stocks that are currently outperforming the index. |
+| **Price Breakout** | Last close \> **Max Close of the previous N bars** | Detects a clear momentum breakout (making a fresh high/low). |
+| **EMA20 + RSI10** | **Close \> EMA(20)** AND **RSI(10) \> 50** | Confirms a strong, established short-term bullish trend. |
+
+-----
+
+## ⚙️ Configuration & Parameter Guide
+
+All parameters are adjusted in the Streamlit sidebar. Finding the perfect combination is key to successful screening.
+
+| Parameter | Suggested Value | Why |
+| :--- | :--- | :--- |
+| **Signal Score Threshold** | `3` or `4` | Controls sensitivity. Higher score = fewer, higher-quality signals. |
+| **Volume Spike Multiplier** | `1.5x – 2x` | Filters for genuine spikes; a 1.5x spike is 50% more volume than average. |
+| **ATR Multiplier (Stop Loss)** | `1.8x – 2x` | This sets your SL distance. A 2x buffer avoids being stopped out by normal intraday noise. |
+| **ATR Percentile Threshold** | `30 – 40` | Filters out 'dead' stocks and keeps moderate-to-high volatility candidates. |
+| **Risk-Reward Ratio (Target)** | `2.0` (for 1:2 RRR) | Automatically sets Target distance as `2 × Stop Loss` distance. |
+
+### Filter Presets
+
+The app allows you to **Save and Load** various filter and parameter combinations to quickly switch between aggressive, moderate, and conservative screening setups.
+
+-----
+
+## 🧠 Technical Prediction Module (Directional Bias)
+
+When enabled, this module runs a separate analysis on the shortlisted stocks to provide a quick high-level view of the directional bias *before* trading.
 
 | Indicator | Meaning |
-|------------|----------|
-| **RSI (7)** | Detects overbought/oversold conditions |
-| **Support / Resistance** | Checks proximity to key zones |
-| **Double Top / Bottom** | Identifies reversal patterns |
-| **Trend Line** | Finds short-term up/down trends |
-| **Verdict** | Combines all factors into a clear bias (Buy / Sell / Neutral) |
+| :--- | :--- |
+| **RSI (7)** | Checks for extreme overbought/oversold conditions (fast-reacting). |
+| **Support / Resistance** | Analyzes proximity to key historical price zones. |
+| **Double Top / Bottom** | Identifies classic reversal patterns. |
+| **Trend Line** | Finds the current short-term trend slope. |
+| **Verdict** | Combines all factors into a final bias (**Buy / Sell / Neutral**). |
 
-This gives a quick high-level *directional view* before intraday entry.
+-----
 
+## 🛠️ Setup and Running the App
 
-Filter / Indicator          |  Calculation                                                    |  Condition For Pick            |  Purpose                       
-----------------------------+-----------------------------------------------------------------+--------------------------------+--------------------------------
-Volume Spike                |  Current volume vs 20-bar average volume × multiplier           |  Current volume > threshold    |  Identify unusual volume spikes
-ATR Breakout                |  ATR value compared to percentile threshold × multiplier        |  ATR > threshold               |  Filter volatile stocks        
-Relative Strength           |  % change stock close – % change NIFTY close over RS lookback   |  Difference > 0                |  Select outperforming stocks   
-Price Breakout              |  Last close > max close of previous N bars (momentum lookback)  |  Last close > previous high    |  Detect breakout               
-EMA20 + RSI10 Confirmation  |  Last close > EMA20 and RSI(10) > 50                            |  Both true                     |  Confirm bullish momentum      
-RSI Indicator               |  RSI(7) with overbought and oversold zones                      |  RSI > 80 sell, RSI < 20 buy   |  Identify extreme momentum     
-Support/Resistance Zones    |  Price within 1% of support or resistance from last 20 bars     |  Near support or resistance    |  Price action zones            
-Double Tops / Bottoms       |  Pattern match on last 10 highs/lows                            |  Double top or bottom pattern  |  Potential reversal signals    
-Trend Line                  |  Linear slope of last 15 closes                                 |  Positive slope = uptrend      |  Confirm trend direction       
+### 1\. Installation
 
-Test Case  |  ATR Period  |  ATR Multiplier (Stop Loss)  |  Risk-Reward Ratio (Target)  |  Notes                           
------------+--------------+------------------------------+------------------------------+----------------------------------
-1          |  7           |  1.5                         |  2.0                         |  Faster stops, moderate RR       
-2          |  7           |  2.0                         |  2.0                         |  Default aggressive stops        
-3          |  10          |  1.5                         |  2.5                         |  Slightly smoother ATR, higher RR
-4          |  10          |  2.0                         |  3.0                         |  Balanced TR and RR              
-5          |  14          |  2.0                         |  2.0                         |  Smoother ATR, standard RR       
-6          |  14          |  2.5                         |  3.5                         |  Conservative stops, high RR     
-7          |  21          |  3.0                         |  4.0                         |  Long ATR period, wide stops     
-8          |  7           |  1.0                         |  1.5                         |  Tighter stops, lower reward     
+```bash
+# Install the necessary libraries
+pip install streamlit pandas yfinance numpy requests plyer streamlit-autorefresh ta-lib
+```
 
-How to use:
+### 2\. Execution
 
-Vary the ATR Period parameter (lookback length on ATR calculation).
+Save your script as `nse_intraday_picker_streamlit.py` and run it:
 
-Vary the ATR Multiplier which controls how far your stop loss is below entry price.
+```bash
+streamlit run nse_intraday_picker_streamlit.py
+```
 
-Vary the Risk-Reward Ratio which sets how far your target is from entry relative to stop loss risk.
+### 3\. Usage Tip
 
-| Parameter                        | Suggested Value                          | Why                                                                                                            |
-| -------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| **Volume Spike Multiplier**      | `1.5x – 2x`                              | Filters only genuine spikes — e.g., if average 10-min volume = 100k, today’s bar should be >150k–200k.         |
-| **ATR Period**                   | `14`                                     | Standard. Keeps volatility smooth.                                                                             |
-| **ATR Multiplier for Stop Loss** | `1.8x – 2x`                              | A 2× buffer avoids getting stopped out by random intraday wiggles.                                             |
-| **ATR Percentile Threshold**     | `30 – 40`                                | Keeps moderate-to-high volatility stocks; not too crazy, not dead.                                             |
-| **Momentum Lookback (bars)**     | `20 – 40`                                | Captures a short trend burst (approx. last 30–60 mins on 5-min chart).                                         |
-| **RSI (7)**                      | Overbought >80, Oversold <20, Neutral 50 | For intraday moves, RSI 7 reacts quickly — over 80 means “maybe short soon,” below 20 means “maybe long soon.” |
-| **Double Bottom / Top**          | Confirm with volume divergence           | When RSI diverges or volume spikes near 2nd bottom/top — it’s a strong reversal clue.                          |
-| **Support / Resistance**         | From 1D and 1H timeframe                 | For intraday, plot S/R from previous day’s highs/lows, not weekly.                                             |
-| **Max F&O Symbols to Scan**      | `100–150`                                | Keeps your scanner efficient and avoids clutter.                                                               |
+Remember to **enable Desktop and Telegram Notifications** in the sidebar if you want instant alerts when a stock meets your scoring threshold\!
