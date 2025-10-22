@@ -294,8 +294,9 @@ with st.sidebar.expander("Filters & Parameters", expanded=True):
 with st.sidebar.expander("Notification Settings", expanded=False):
     notify_desktop = st.checkbox("💻 Enable Desktop Notification", default_notify_desktop)
     notify_telegram = st.checkbox("📨 Enable Telegram Notification", default_notify_telegram)
+    CHAT_ID = st.text_input("Telegram Chat ID", "")    
     BOT_TOKEN = st.text_input("Telegram Bot Token", "", type="password")
-    CHAT_ID = st.text_input("Telegram Chat ID", "")
+
 
     # --- ADDED: TELEGRAM TEST BUTTON SECTION ---
 
@@ -417,8 +418,16 @@ def get_fo_symbols(max_symbols_local=80):
         "BRITANNIA", "EICHERMOT", "HCLTECH", "ONGC", "BEL", "TRENT", "SIEMENS",
         "DLF", "PIDILITIND", "APOLLOHOSP", "HAVELLS", "BAJAJ-AUTO", "TECHM",
         "VEDL", "TITAN", "BOSCHLTD", "GAIL", "UPL", "COLPAL",
-        "ICICIGI", "ADANIPOWER", "BAJFINANCE"
-    ]
+        "ICICIGI", "ADANIPOWER", "BAJFINANCE",
+        "ABFRL", "ATGL", "CESC", "GRANULES", "IRB", "JSL", "POONAWALLA", "SJVN",
+        "AARTIIND", "BSOFT", "HINDCOPPER", "MGL", "PEL", "ACC", "BALKRISIND",
+        "CHAMBLFERT", "M&MFIN", "TATACOM", "APOLLOTYRE", "DEEPAKNTR", "ESCORTS",
+        "MRF", "RAMCOCEM", "BERGEPAINT", "JKCEMENT", "LTTS", "ABBOTINDIA", "ATUL",
+        "BATAINDIA", "CANFINHOME", "COROMANDEL", "CUB", "GNFC", "GUJGASLTD",
+        "INDIAMART", "IPCALAB", "LALPATHLAB", "METROPOLIS", "NAVINFLUOR",
+        "PVRINOX", "SUNTV", "UBL"
+        ]
+
     return base[:max_symbols_local]
 
 # -------------------------
@@ -551,11 +560,11 @@ def scan_stock_improved(sym, df_stock, **kwargs):
 
             rsi7_val = df["RSI7"].iloc[-1]
             if np.isfinite(rsi7_val):
-                if rsi7_val >= 80:
-                    reasons.append("💥 RSI (7) > 80 (Overbought)")
+                if rsi7_val >= 70:
+                    reasons.append("💥 RSI (7) > 70 (Overbought)")
                     score += 1
-                elif rsi7_val <= 20:
-                    reasons.append("💥 RSI (7) < 20 (Oversold)")
+                elif rsi7_val <= 30:
+                    reasons.append("💥 RSI (7) < 30 (Oversold)")
                     score += 1
         except Exception:
             reasons.append("⚠️ EMA/RSI calc failed")
@@ -646,7 +655,7 @@ def scan_stock_improved(sym, df_stock, **kwargs):
 # -------------------------
 # Scan Universe (batch)
 # -------------------------
-st.subheader("🚀 Scanning Stocks")
+st.subheader("🐉 Scanning Stocks")
 
 fo_symbols = get_fo_symbols(max_symbols)
 tickers = [f"{s}.NS" for s in fo_symbols]
