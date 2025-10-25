@@ -1,4 +1,4 @@
-Perfect! Here's a comprehensive guide with **optimized preset configurations** for different trading styles. Save each as a separate preset in your app.
+Here's a comprehensive guide with **optimized preset configurations** for different trading styles. Save each as a separate preset in your app.
 
 ***
 
@@ -249,25 +249,4 @@ Perfect! Here's a comprehensive guide with **optimized preset configurations** f
 4. **Adjust for Volatility**: During high VIX, increase ATR multiplier by 0.2-0.3[9]
 5. **Liquidity First**: Scalping/Intraday should only trade top 40 liquid stocks[2]
 
-These presets are optimized based on **research-backed parameters** and will help you catch stocks at the right stage for your trading style! 🎯[3][13][2][1][4][9]
-
-[1](https://www.goatfundedtrader.com/blog/best-rsi-settings-for-day-trading)
-[2](https://www.stockgro.club/blogs/intraday-trading/best-macd-settings-for-intraday-trading/)
-[3](https://stockstotrade.com/macd-for-day-trading/)
-[4](https://www.mc2.fi/blog/best-rsi-settings-for-swing-trading)
-[5](https://www.vectorvest.com/blog/swing-trading/what-is-the-best-time-frame-for-swing-trading/)
-[6](https://www.vectorvest.com/blog/swing-trading/best-stochastic-settings-for-swing-trading/)
-[7](https://www.quantifiedstrategies.com/which-is-the-best-indicator-for-swing-trading/)
-[8](https://learn.moneysukh.com/best-indicators-for-long-term-positional-trading/)
-[9](https://www.cmcmarkets.com/en-gb/trading-guides/position-trading)
-[10](https://www.mql5.com/en/blogs/post/759799)
-[11](https://www.investopedia.com/articles/trading/07/timeframes.asp)
-[12](https://www.mindmathmoney.com/articles/linda-raschke-trading-strategy-macd-indicator-settings-for-trading-stocks-forex-and-crypto)
-[13](https://www.quantifiedstrategies.com/macd-and-rsi-strategy/)
-[14](https://www.timothysykes.com/blog/best-macd-settings/)
-[15](https://www.investopedia.com/articles/forex/05/macddiverge.asp)
-[16](https://www.tradu.com/en/guide/trading/position-trading-indicators/)
-[17](https://www.mc2.fi/blog/best-rsi-settings-for-day-trading)
-[18](https://www.investopedia.com/top-7-technical-analysis-tools-4773275)
-[19](https://stockstotrade.com/rsi-settings-day-trading/)
-[20](https://lakshmishree.com/blog/best-time-frame-for-swing-trading/)
+These presets are optimized based on **research-backed parameters** and will help you catch stocks at the right stage for your trading style! 🎯
