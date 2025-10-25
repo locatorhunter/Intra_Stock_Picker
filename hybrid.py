@@ -16,7 +16,26 @@ st.markdown("<h1 style='text-align: center; margin-bottom: -100px; margin-top: -
 
 # --- GLOBAL DEFINITIONS ---
 IST = pytz.timezone("Asia/Kolkata")
+# Initialize notification variables globally
+notify_desktop = True
+notify_telegram = True
+BOT_TOKEN = ""
+CHAT_ID = ""
+# ADD THIS NEW SECTION HERE - Initialize session state FIRST:
+if 'notify_desktop' not in st.session_state:
+    st.session_state.notify_desktop = True
+if 'notify_telegram' not in st.session_state:
+    st.session_state.notify_telegram = True
+if 'BOT_TOKEN' not in st.session_state:
+    st.session_state.BOT_TOKEN = ""
+if 'CHAT_ID' not in st.session_state:
+    st.session_state.CHAT_ID = ""
 
+# Now set global variables from session state
+notify_desktop = st.session_state.notify_desktop
+notify_telegram = st.session_state.notify_telegram
+BOT_TOKEN = st.session_state.BOT_TOKEN
+CHAT_ID = st.session_state.CHAT_ID    
 #------------------------
 #Notification
 #------------------------
@@ -48,20 +67,49 @@ def safe_telegram_send(text):
         print(f"DEBUG: Telegram send EXCEPTION. Error: {str(e)}")
         return False, str(e)
 
+import time
+
 def notify_stock(symbol, last_price, entry=None, stop_loss=None, target=None):
+    """Send notifications for shortlisted stocks"""
     timestamp = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
     msg = f"📢 {symbol} shortlisted!\n💵 Last: {last_price}\n⏰ Time: {timestamp}"
     if entry: msg += f"\n🟢 Entry: {entry:.2f}"
     if stop_loss: msg += f"\n❌ Stop-Loss: {stop_loss:.2f}"
     if target: msg += f"\n🏆 Target: {target:.2f}"
-    try:
-        safe_notify(f"📈 NSE Picker: {symbol}", msg)
-    except Exception:
-        pass
-    if notify_telegram:
-        ok, info = safe_telegram_send(msg)
-        # if not ok:
-        #     st.warning(f"Telegram notify failed for {symbol}: {info}")
+    
+    # Get values from session state
+    notify_desktop_val = st.session_state.get('notify_desktop', True)
+    notify_telegram_val = st.session_state.get('notify_telegram', True)
+    bot_token_val = st.session_state.get('BOT_TOKEN', '')
+    chat_id_val = st.session_state.get('CHAT_ID', '')
+    
+    print(f"DEBUG notify_stock: Desktop={notify_desktop_val}, Telegram={notify_telegram_val}, Token={bool(bot_token_val)}, ChatID={bool(chat_id_val)}")
+    
+    # Desktop notification
+    if notify_desktop_val:
+        try:
+            safe_notify(f"📈 NSE Picker: {symbol}", msg)
+            print("Desktop notification sent.")
+        except Exception as e:
+            print(f"Desktop error: {e}")
+    
+    # Telegram notification with rate limiting
+    if notify_telegram_val and bot_token_val and chat_id_val:
+        print(f"Sending Telegram for {symbol}...")
+        url = f"https://api.telegram.org/bot{bot_token_val}/sendMessage"
+        try:
+            resp = requests.get(url, params={"chat_id": chat_id_val, "text": msg}, timeout=5)
+            
+            if resp.status_code == 200:
+                print("Telegram sent successfully!")
+                # ADD DELAY to prevent rate limiting
+                time.sleep(0.5)  # 500ms delay between messages
+            else:
+                error_data = resp.json()
+                error_msg = error_data.get("description", f"HTTP {resp.status_code}")
+                print(f"Telegram failed: {error_msg}")
+        except Exception as e:
+            print(f"Telegram exception: {str(e)}")
 
 FILTER_DIR = "filter_presets" 
 
@@ -116,7 +164,7 @@ if 'current_preset_name' not in st.session_state:
     st.session_state['current_preset_name'] = 'Default'
 
 if 'scan_mode' not in st.session_state:
-    st.session_state['scan_mode'] = 'Early Detection (Recommended)'
+    st.session_state['scan_mode'] = 'Early Detection 🐇'
 
 saved_filters = load_filters(st.session_state.current_preset_name)
 
@@ -135,9 +183,9 @@ default_atr_period = saved_filters.get('atr_period', 7)
 default_atr_mult = saved_filters.get('atr_mult', 0.9)
 default_momentum_lookback = saved_filters.get('momentum_lookback', 3)
 default_rs_lookback = saved_filters.get('rs_lookback', 3)
-default_signal_score_threshold = saved_filters.get('signal_score_threshold', 5)
+default_signal_score_threshold = saved_filters.get('signal_score_threshold', 10)
 default_notify_desktop = saved_filters.get('notify_desktop', True)
-default_notify_telegram = saved_filters.get('notify_telegram', False)
+default_notify_telegram = saved_filters.get('notify_telegram', True)
 
 st.set_page_config(
     layout="wide",
@@ -164,26 +212,25 @@ display_live_clock()
 st.sidebar.markdown("---")
 
 # === SCAN MODE SELECTOR ===
-st.sidebar.markdown("### 🎯 Scan Strategy")
-scan_mode = st.sidebar.radio(
-    "Choose scanning mode:",
-    ["Early Detection (Recommended)", "Original (Confirmation)"],
-    index=0 if st.session_state['scan_mode'] == 'Early Detection (Recommended)' else 1,
-    help="**Early Detection**: Catches stocks BEFORE major moves (pre-breakout, consolidation)\n\n**Original**: Waits for confirmation signals (breakouts, high RSI)"
-)
+with st.sidebar.expander("### 🎯 Scan Strategy", expanded=True):
+# st.sidebar.markdown("### 🎯 Scan Strategy")
+    scan_mode = st.radio(
+        "Choose scanning mode:",
+        ["Early Detection 🐇", "Original 🦖"],
+        index=0 if st.session_state['scan_mode'] == 'Early Detection 🐇' else 1,
+        help="**Early Detection 🐇**: Catches stocks BEFORE major moves (pre-breakout, consolidation)\n\n**Original 🦖**: Waits for confirmation signals (breakouts, high RSI)"
+    )
 
-if scan_mode != st.session_state['scan_mode']:
-    st.session_state['scan_mode'] = scan_mode
+    if scan_mode != st.session_state['scan_mode']:
+        st.session_state['scan_mode'] = scan_mode
 
-# Show mode info
-if scan_mode == "Early Detection (Recommended)":
-    st.sidebar.info("🎯 **Early Detection Mode**\n\nCatches stocks in accumulation/consolidation phase before major moves.")
-else:
-    st.sidebar.info("✅ **Confirmation Mode**\n\nWaits for strong confirmation signals before alerting.")
+# # Show mode info
+# if scan_mode == "Early Detection 🐇":
+#     st.sidebar.info("🎯 **Early Detection 🐇 Mode**\n\nCatches stocks in accumulation/consolidation phase before major moves.")
+# else:
+#     st.sidebar.info("✅ **Confirmation Mode**\n\nWaits for strong confirmation signals before alerting.")
 
-show_technical_predictions = st.sidebar.checkbox("Show Technical Predictions", True)
-
-with st.sidebar.expander("⚙️ Saved Filters", expanded=False):
+with st.sidebar.expander("⚙️ Saved Filters", expanded=True):
     st.markdown("#### Load Saved filters:")
     available_presets = get_available_presets()
     display_presets = ['Default'] + available_presets
@@ -201,8 +248,7 @@ with st.sidebar.expander("⚙️ Saved Filters", expanded=False):
         st.session_state.current_preset_name = selected_preset_key
         st.rerun()
 
-    st.markdown("---")
-    st.markdown("#### Manage Filters:")
+with st.sidebar.expander("🗑️ Manage Filters:", expanded=False):
     for preset in available_presets:
         col_name, col_delete = st.columns([4, 1])
         col_name.write(f"{preset}")
@@ -232,7 +278,7 @@ with st.sidebar.expander("Set SL and Target", expanded=False):
         key="target_percent_input" 
     )
 
-with st.sidebar.expander("Filters & Parameters", expanded=True):
+with st.sidebar.expander("Filter Parameters", expanded=False):
     use_volume = st.checkbox("📊 Use Volume Spike", default_use_volume)
     use_breakout = st.checkbox("🚀 Use Breakout Filter", default_use_breakout)
     use_ema_rsi = st.checkbox("📉 Use EMA+RSI Filters", default_use_ema_rsi)
@@ -243,25 +289,60 @@ with st.sidebar.expander("Filters & Parameters", expanded=True):
     max_symbols = st.slider("Max F&O symbols to scan", 30, 150, default_max_symbols)
     vol_zscore_threshold = st.slider("Volume z-score threshold", 0.5, 4.0, default_vol_zscore_threshold, 0.1)
     breakout_margin_pct = st.slider("Breakout margin (%)", 0.0, 3.0, default_breakout_margin_pct, 0.1)
-    atr_period = st.slider("ATR period", 5, 21, default_atr_period, 1)
+    atr_period = st.slider("ATR period", 3, 15, default_atr_period, 1)
     atr_mult = st.slider("ATR multiplier (SL)", 0.1, 5.0, default_atr_mult, 0.1)
     momentum_lookback = st.slider("Momentum Lookback (bars)", 2, 20, default_momentum_lookback)
     rs_lookback = st.slider("RS lookback days", 2, 15, default_rs_lookback)
     signal_score_threshold = st.slider("Signal score threshold", 2, 10, default_signal_score_threshold)
 
 with st.sidebar.expander("Notification Settings", expanded=False):
-    notify_desktop = st.checkbox("💻 Enable Desktop Notification", default_notify_desktop)
-    notify_telegram = st.checkbox("📨 Enable Telegram Notification", default_notify_telegram)
-    CHAT_ID = st.text_input("Telegram Chat ID", "")    
-    BOT_TOKEN = st.text_input("Telegram Bot Token", "", type="password")
+    # Use session state to persist notification settings
+    if 'notify_desktop' not in st.session_state:
+        st.session_state.notify_desktop = True
+    if 'notify_telegram' not in st.session_state:
+        st.session_state.notify_telegram = True
+    if 'BOT_TOKEN' not in st.session_state:
+        st.session_state.BOT_TOKEN = ""
+    if 'CHAT_ID' not in st.session_state:
+        st.session_state.CHAT_ID = ""
+    
+    # Update from checkbox/inputs
+    st.session_state.notify_desktop = st.checkbox(
+        "💻 Enable Desktop Notification", 
+        value=st.session_state.notify_desktop
+    )
+    st.session_state.notify_telegram = st.checkbox(
+        "📨 Enable Telegram Notification", 
+        value=st.session_state.notify_telegram
+    )
+    st.session_state.CHAT_ID = st.text_input(
+        "Telegram Chat ID", 
+        value=st.session_state.CHAT_ID
+    )
+    st.session_state.BOT_TOKEN = st.text_input(
+        "Telegram Bot Token", 
+        value=st.session_state.BOT_TOKEN, 
+        type="password"
+    ) 
+
+    # Update globals after user changes
+    notify_desktop = st.session_state.notify_desktop
+    notify_telegram = st.session_state.notify_telegram
+    BOT_TOKEN = st.session_state.BOT_TOKEN
+    CHAT_ID = st.session_state.CHAT_ID
 
     st.markdown("#### Test Notifications")
     test_message = "This is a test notification from the NSE Picker! (If you see this, it works!)"
 
     if st.button("Test Telegram Alert 📨"):
-        if not notify_telegram or not BOT_TOKEN or not CHAT_ID:
+        if not st.session_state.notify_telegram or not st.session_state.BOT_TOKEN or not st.session_state.CHAT_ID:
             st.error("Please enable Telegram notification and fill in the Bot Token/Chat ID first!")
         else:
+            # Update globals before test
+            notify_telegram = st.session_state.notify_telegram
+            BOT_TOKEN = st.session_state.BOT_TOKEN
+            CHAT_ID = st.session_state.CHAT_ID
+
             st.info("Sending test message...")
             ok, info = safe_telegram_send(test_message)
             if ok:
@@ -299,6 +380,7 @@ with st.sidebar.expander("Notification Settings", expanded=False):
                 st.session_state.current_preset_name = custom_name
                 st.sidebar.success(f"Preset '{custom_name}' saved successfully!")
                 st.rerun()
+show_technical_predictions = st.sidebar.checkbox("Show Technical Predictions", True)
 
 if 'last_refresh_time' not in st.session_state:
     st.session_state.last_refresh_time = datetime.now(IST).strftime("%I:%M:%S %p")
@@ -475,10 +557,10 @@ def check_consolidation(df, lookback=10):
     return False, price_range
 
 # -------------------------
-# ORIGINAL SCAN LOGIC (Confirmation Mode)
+# ORIGINAL SCAN LOGIC 🦖
 # -------------------------
 def scan_stock_original(sym, df_stock, **kwargs):
-    """Original scanning logic - waits for confirmation"""
+    """Original 🦖 scanning logic - waits for confirmation"""
     nifty_df = kwargs.get('nifty_df')
     if df_stock is None or df_stock.empty or len(df_stock) < 25:
         return 0, ["⚠️ Not enough data"], None, None, None, {}
@@ -573,7 +655,7 @@ def scan_stock_original(sym, df_stock, **kwargs):
     return score, reasons, entry_price, stop_loss, target_price, signal
 
 # -------------------------
-# EARLY DETECTION SCAN LOGIC
+# Early Detection 🐇 SCAN LOGIC
 # -------------------------
 def scan_stock_early(sym, df_stock, **kwargs):
     """Enhanced scanning logic - catches stocks early"""
@@ -612,7 +694,7 @@ def scan_stock_early(sym, df_stock, **kwargs):
     except:
         pass
 
-    # 2. MODIFIED RSI - Early detection
+    # 2. MODIFIED RSI - Early Detection 🐇
     if use_ema_rsi:
         try:
             rsi7_val = df["RSI7"].iloc[-1]
@@ -725,9 +807,40 @@ def scan_stock_early(sym, df_stock, **kwargs):
     return score, reasons, entry_price, stop_loss, target_price, signal
 
 # -------------------------
+# UPDATE GLOBALS BEFORE SCANNING
+# -------------------------
+# Make sure we use the latest values from session state
+notify_desktop = st.session_state.get('notify_desktop', True)
+notify_telegram = st.session_state.get('notify_telegram', True)
+BOT_TOKEN = st.session_state.get('BOT_TOKEN', '')
+CHAT_ID = st.session_state.get('CHAT_ID', '')
+
+# Print debug info to verify values
+print(f"🔍 PRE-SCAN CHECK:")
+print(f"   notify_desktop: {notify_desktop}")
+print(f"   notify_telegram: {notify_telegram}")
+print(f"   BOT_TOKEN set: {bool(BOT_TOKEN)}")
+print(f"   CHAT_ID set: {bool(CHAT_ID)}")
+
+# --- Refresh notification settings dynamically before scan ---
+st.session_state.notify_desktop = st.session_state.get("notify_desktop", True)
+st.session_state.notify_telegram = st.session_state.get("notify_telegram", True)
+st.session_state.BOT_TOKEN = st.session_state.get("BOT_TOKEN", "")
+st.session_state.CHAT_ID = st.session_state.get("CHAT_ID", "")
+
+notify_desktop = st.session_state.notify_desktop
+notify_telegram = st.session_state.notify_telegram
+BOT_TOKEN = st.session_state.BOT_TOKEN
+CHAT_ID = st.session_state.CHAT_ID
+
+print(f"[DEBUG] Refreshed settings → Desktop={notify_desktop}, Telegram={notify_telegram}, "
+      f"Token={bool(BOT_TOKEN)}, ChatID={bool(CHAT_ID)}")
+
+
+# -------------------------
 # Scan Universe (batch)
 # -------------------------
-st.subheader(f"🐉 Scanning Stocks ({scan_mode})")
+st.subheader(f"🕵️ Scanning Stocks ({custom_name})")
 
 fo_symbols = get_fo_symbols(max_symbols)
 tickers = [f"{s}.NS" for s in fo_symbols]
@@ -761,10 +874,16 @@ def check_watchlist_hits(df_batch):
             message = f"🛑 STOP LOSS HIT for {sym}! Current Price: {latest_price:.2f}"
 
         if message:
-            safe_notify("Trade Alert", message)
-            safe_telegram_send(message)
-            keys_to_remove.append(sym)
-            info["status"] = "Closed"
+            if st.session_state.get('notify_desktop', True):
+                safe_notify("Trade Alert", message)
+            if st.session_state.get('notify_telegram', True):
+                # Update globals
+                notify_telegram = st.session_state.notify_telegram
+                BOT_TOKEN = st.session_state.BOT_TOKEN
+                CHAT_ID = st.session_state.CHAT_ID
+                safe_telegram_send(message)
+                keys_to_remove.append(sym)
+                info["status"] = "Closed"
 
     for key in keys_to_remove:
         del st.session_state.watchlist[key]
@@ -783,7 +902,7 @@ def extract_symbol_df(df_batch_local: pd.DataFrame, sym: str) -> pd.DataFrame:
         first_level_lc = {s.lower() for s in first_level_unique}
 
         for cand in candidates:
-            cand_lc = cand.lower()
+            cand_lc = cand.lower()  
             if cand_lc in first_level_lc:
                 match = next((x for x in first_level_unique if x.lower() == cand_lc), None)
                 if match is not None:
@@ -815,7 +934,7 @@ def extract_symbol_df(df_batch_local: pd.DataFrame, sym: str) -> pd.DataFrame:
     return pd.DataFrame()
 
 # Choose which scanner to use based on mode
-scan_function = scan_stock_early if scan_mode == "Early Detection (Recommended)" else scan_stock_original
+scan_function = scan_stock_early if scan_mode == "Early Detection 🐇" else scan_stock_original
 
 for i, sym in enumerate(fo_symbols):
     status_text.text(f"Scanning {sym} ({i+1}/{len(fo_symbols)})")
@@ -868,26 +987,75 @@ if not candidates:
     safe_telegram_send("✅ Scan finished. No new stocks meet the criteria.")
 
 if candidates:
-    with st.expander("📈Shortlisted Stocks", expanded=True): 
+    with st.expander("📈 Qualified Stocks", expanded=True): 
         df_candidates = pd.DataFrame(candidates).set_index("Symbol").sort_values(by="Score", ascending=False)
-        qualified_count = len(df_candidates[df_candidates['Score'] >= signal_score_threshold])
-        st.success(f"✅ Scanned {len(df_candidates)} stocks. **{qualified_count}** stocks meet the threshold of {signal_score_threshold}.")
-        st.dataframe(df_candidates)
-        st.download_button(
-            "💾 Download candidates CSV",
-            df_candidates.to_csv(index=True),
-            file_name=f"candidates_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-            key="candidates_download_2" 
-        )
+        
+        # Filter ONLY qualified stocks
+        qualified_df = df_candidates[df_candidates['Score'] >= signal_score_threshold]
+        
+        if len(qualified_df) > 0:
+            # One-line compact header
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.success(f"✅ {len(qualified_df)} qualified (of {len(df_candidates)} scanned) | Threshold: {signal_score_threshold}")
+            with col2:
+                st.download_button(
+                    "💾 CSV", 
+                    qualified_df.to_csv(index=True),
+                    file_name=f"qualified_{datetime.now(IST).strftime('%H%M%S')}.csv",
+                    use_container_width=True
+                )
+            
+            # Format dataframe for display
+            display_df = qualified_df.copy()
+            
+            # Format prices
+            for col in ['Last Close', 'Entry', 'Stop Loss', 'Target']:
+                if col in display_df.columns:
+                    display_df[col] = display_df[col].apply(
+                        lambda x: f"₹{x:.1f}" if isinstance(x, (int, float)) else x
+                    )
+            
+            # Compact reasons (first 2 only, truncated)
+            display_df['Reasons'] = display_df['Reasons'].apply(
+                lambda x: " | ".join([str(r)[:35] for r in x[:8]]) if isinstance(x, list) else str(x)[:50]
+            )
+            
+            # Rename columns for compactness
+            display_df = display_df.rename(columns={
+                'Last Close': 'Last',
+                'Stop Loss': 'SL',
+                'Target': 'Tgt',
+                'Reasons': 'Signals'
+            })
+            
+            # Display ultra-compact table
+            st.dataframe(
+                display_df,
+                column_config={
+                    "Score": st.column_config.NumberColumn(width="small"),
+                    "Last": st.column_config.TextColumn(width="small"),
+                    "Entry": st.column_config.TextColumn(width="small"),
+                    "SL": st.column_config.TextColumn(width="small"),
+                    "Tgt": st.column_config.TextColumn(width="small"),
+                    "Signals": st.column_config.TextColumn(width="large"),
+                },
+                use_container_width=True,
+                height=min(400, len(qualified_df) * 35 + 38)  # Auto-height based on rows
+            )
+            
+        else:
+            st.warning(f"No stocks qualified (Threshold: {signal_score_threshold}). Scanned: {len(df_candidates)}")
+
 else:
-    st.info("⚠️ No candidates found this round.")
+    st.info("⚠️ No scan results.")
+
 
 # -------------------------
 # Technical Predictions
 # -------------------------
 if show_technical_predictions:
-    with st.expander("📈 Technical Predictions for Shortlisted Stocks", expanded=True):
+    with st.expander("📈 Technical Predictions for Shortlisted Stocks", expanded=False):
         if not shortlisted_stocks:
             st.info("No shortlisted stocks to show predictions for.")
         else:
@@ -901,6 +1069,8 @@ if show_technical_predictions:
                     entry_for_wl = candidate_row['Entry']
                     sl_for_wl = candidate_row['Stop Loss']
                     target_for_wl = candidate_row['Target']
+                    score = candidate_row['Score']
+                    reasons = candidate_row['Reasons']
                 except KeyError:
                     st.warning(f"Trade levels for {stock} not found in candidates list.")
                     continue
@@ -911,22 +1081,159 @@ if show_technical_predictions:
                     continue
                     
                 df_for_pred = compute_indicators(df_for_pred)
-                analysis = {
-                    "Last Close": float(df_for_pred["Close"].iloc[-1]),
-                    "EMA20": float(df_for_pred["EMA20"].iloc[-1]) if "EMA20" in df_for_pred else np.nan,
-                    "RSI10": float(df_for_pred["RSI10"].dropna().iloc[-1]) if "RSI10" in df_for_pred and not df_for_pred["RSI10"].dropna().empty else np.nan,
-                    "ATR": float(df_for_pred["ATR"].iloc[-1]) if "ATR" in df_for_pred and not np.isnan(df_for_pred["ATR"].iloc[-1]) else np.nan
-                }
                 
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.markdown(f"### {stock}")
-                    st.table(pd.DataFrame(analysis, index=[0]))
-                with col2:
-                    if stock in st.session_state.watchlist:
-                        st.button("Added to Watchlist!", key=f"added_{stock}", disabled=True)
+                # Get values
+                last_close = float(df_for_pred["Close"].iloc[-1])
+                ema20 = float(df_for_pred["EMA20"].iloc[-1]) if "EMA20" in df_for_pred else np.nan
+                rsi7 = float(df_for_pred["RSI7"].dropna().iloc[-1]) if "RSI7" in df_for_pred and not df_for_pred["RSI7"].dropna().empty else np.nan
+                rsi10 = float(df_for_pred["RSI10"].dropna().iloc[-1]) if "RSI10" in df_for_pred and not df_for_pred["RSI10"].dropna().empty else np.nan
+                atr = float(df_for_pred["ATR"].iloc[-1]) if "ATR" in df_for_pred and not np.isnan(df_for_pred["ATR"].iloc[-1]) else np.nan
+                macd = float(df_for_pred["MACD"].iloc[-1]) if "MACD" in df_for_pred and not np.isnan(df_for_pred["MACD"].iloc[-1]) else np.nan
+                macd_signal = float(df_for_pred["MACD_signal"].iloc[-1]) if "MACD_signal" in df_for_pred and not np.isnan(df_for_pred["MACD_signal"].iloc[-1]) else np.nan
+                adx = float(df_for_pred["ADX"].iloc[-1]) if "ADX" in df_for_pred and not np.isnan(df_for_pred["ADX"].iloc[-1]) else np.nan
+                
+                # Determine trend
+                price_vs_ema = "🟢 Above" if last_close > ema20 else "🔴 Below"
+                rsi_status = "🔥 Overbought" if rsi7 > 70 else ("🟢 Bullish" if rsi7 > 50 else ("⚠️ Neutral" if rsi7 > 30 else "❄️ Oversold"))
+                macd_status = "🟢 Bullish" if macd > macd_signal else "🔴 Bearish"
+                
+                 # Calculate percentages and R:R
+                if isinstance(entry_for_wl, (int, float)) and isinstance(sl_for_wl, (int, float)) and isinstance(target_for_wl, (int, float)):
+                    sl_pct = ((entry_for_wl - sl_for_wl) / entry_for_wl * 100)
+                    target_pct = ((target_for_wl - entry_for_wl) / entry_for_wl * 100)
+                    risk_reward = f"{(target_pct / sl_pct):.1f}:1" if sl_pct > 0 else "N/A"
+                    # Format values before f-string
+                    entry_display = f"₹{entry_for_wl:.2f}"
+                    sl_display = f"₹{sl_for_wl:.2f}"
+                    target_display = f"₹{target_for_wl:.2f}"
+                    sl_pct_display = f"-{sl_pct:.1f}%"
+                    target_pct_display = f"+{target_pct:.1f}%"
+                else:
+                    entry_display = "N/A"
+                    sl_display = "N/A"
+                    target_display = "N/A"
+                    sl_pct_display = ""
+                    target_pct_display = ""
+                    risk_reward = "N/A"
+                
+                # Create beautiful banner with all info
+                banner_html = f"""
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                padding:15px 20px;border-radius:10px;margin-bottom:15px;box-shadow:0 4px 8px rgba(0,0,0,0.2);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                        <h2 style="color:white;margin:0;font-size:26px;">📊 {stock}</h2>
+                        <span style="background:rgba(255,215,0,0.3);color:#ffd700;padding:4px 14px;
+                                     border-radius:20px;font-size:14px;font-weight:700;">
+                            Score: {score}
+                        </span>
+                    </div>
+                    <div style="color:#e0e0e0;font-size:13px;margin-bottom:12px;">
+                        Last Close: <strong style="color:white;">₹{last_close:.2f}</strong>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+                        <div style="background:rgba(255,255,255,0.12);padding:8px;border-radius:6px;text-align:center;">
+                            <div style="color:#ddd;font-size:10px;margin-bottom:3px;">💰 ENTRY</div>
+                            <div style="color:white;font-size:16px;font-weight:700;">{entry_display}</div>
+                        </div>
+                        <div style="background:rgba(255,255,255,0.12);padding:8px;border-radius:6px;text-align:center;">
+                            <div style="color:#ddd;font-size:10px;margin-bottom:3px;">🛑 SL</div>
+                            <div style="color:#ff6b6b;font-size:16px;font-weight:700;">{sl_display}</div>
+                            <div style="color:#ffcccc;font-size:9px;">{sl_pct_display}</div>
+                        </div>
+                        <div style="background:rgba(255,255,255,0.12);padding:8px;border-radius:6px;text-align:center;">
+                            <div style="color:#ddd;font-size:10px;margin-bottom:3px;">🎯 TARGET</div>
+                            <div style="color:#51cf66;font-size:16px;font-weight:700;">{target_display}</div>
+                            <div style="color:#d0f4d0;font-size:9px;">{target_pct_display}</div>
+                        </div>
+                        <div style="background:rgba(255,215,0,0.2);padding:8px;border-radius:6px;text-align:center;
+                                    border:1px solid rgba(255,215,0,0.4);">
+                            <div style="color:#ffe066;font-size:10px;margin-bottom:3px;">⚖️ R:R</div>
+                            <div style="color:#ffd700;font-size:18px;font-weight:700;">{risk_reward}</div>
+                        </div>
+                    </div>
+                </div>
+                """
+                st.markdown(banner_html, unsafe_allow_html=True)
+
+
+                
+                # Technical indicators in expandable section
+                with st.expander("🔍 Technical Analysis Details", expanded=False):
+                    col_ta1, col_ta2, col_ta3 = st.columns(3)
+                    
+                    with col_ta1:
+                        st.markdown("#### 📈 Trend Indicators")
+                        st.markdown(f"**EMA20:** ₹{ema20:.2f}")
+                        st.markdown(f"**Price vs EMA:** {price_vs_ema}")
+                        if not np.isnan(adx):
+                            adx_strength = "💪 Strong" if adx > 25 else ("📊 Moderate" if adx > 20 else "📉 Weak")
+                            st.markdown(f"**ADX:** {adx:.1f} {adx_strength}")
+                    
+                    with col_ta2:
+                        st.markdown("#### 🎯 Momentum")
+                        if not np.isnan(rsi7):
+                            st.markdown(f"**RSI(7):** {rsi7:.1f} {rsi_status}")
+                            # RSI bar
+                            rsi_color = "#ff4444" if rsi7 > 70 else ("#44ff44" if rsi7 > 50 else ("#ffaa44" if rsi7 > 30 else "#4444ff"))
+                            st.markdown(f"""
+                            <div style="background: #ddd; border-radius: 10px; height: 20px; width: 100%;">
+                                <div style="background: {rsi_color}; width: {rsi7}%; height: 100%; border-radius: 10px;"></div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        if not np.isnan(rsi10):
+                            st.markdown(f"**RSI(10):** {rsi10:.1f}")
+                    
+                    with col_ta3:
+                        st.markdown("#### 📊 MACD & Volatility")
+                        if not np.isnan(macd) and not np.isnan(macd_signal):
+                            st.markdown(f"**MACD:** {macd:.2f}")
+                            st.markdown(f"**Signal:** {macd_signal:.2f}")
+                            st.markdown(f"**Status:** {macd_status}")
+                        if not np.isnan(atr):
+                            st.markdown(f"**ATR:** {atr:.2f}")
+                
+                # Signal reasons - horizontal badge style
+                st.markdown("#### 🎯 Signal Reasons")
+                reasons_list = reasons if isinstance(reasons, list) else [reasons]
+                
+                # Create HTML badges with proper escaping
+                badges_html = '<div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">'
+                
+                for reason in reasons_list:
+                    # Clean the reason text
+                    reason_text = str(reason).replace('"', '&quot;').replace("'", "&#39;")
+                    
+                    # Color coding based on reason type
+                    if "MACD" in reason or "reversal" in reason:
+                        badge_color = "#4CAF50"  # Green
+                    elif "breakout" in reason or "Approaching" in reason:
+                        badge_color = "#FF9800"  # Orange
+                    elif "RSI" in reason:
+                        badge_color = "#2196F3"  # Blue
+                    elif "Volume" in reason:
+                        badge_color = "#9C27B0"  # Purple
+                    elif "Consolidating" in reason:
+                        badge_color = "#00BCD4"  # Cyan
+                    elif "trend" in reason or "ADX" in reason:
+                        badge_color = "#FF5722"  # Deep Orange
+                    elif "EMA" in reason:
+                        badge_color = "#607D8B"  # Blue Grey
                     else:
-                        if st.button("Add to Watchlist", key=f"add_wl_from_pred_{stock}"):
+                        badge_color = "#757575"  # Grey
+                    
+                    badges_html += f'<span style="display: inline-block; background: {badge_color}; color: white; padding: 6px 12px; border-radius: 16px; font-size: 13px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.2); margin-right: 8px; margin-bottom: 8px;">✓ {reason_text}</span>'
+                
+                badges_html += '</div>'
+                st.markdown(badges_html, unsafe_allow_html=True)
+
+                
+                # Action buttons
+                col_btn1, col_btn2, col_btn3 = st.columns([2, 2, 6])
+                with col_btn1:
+                    if stock in st.session_state.watchlist:
+                        st.success("✅ In Watchlist")
+                    else:
+                        if st.button(f"➕ Watchlist", key=f"add_wl_from_pred_{stock}", use_container_width=True):
                             st.session_state.watchlist[stock] = {
                                 "entry": entry_for_wl,
                                 "sl": sl_for_wl,
@@ -934,6 +1241,15 @@ if show_technical_predictions:
                                 "status": "Active"
                             }
                             st.success(f"Added {stock} to watchlist!")
+                            st.rerun()
+                
+                with col_btn2:
+                    if st.button(f"📊 View Chart", key=f"chart_{stock}", use_container_width=True):
+                        st.info(f"Opening TradingView for {stock}...")
+                        st.markdown(f"[Open in TradingView](https://www.tradingview.com/chart/?symbol=NSE%3A{stock})", unsafe_allow_html=True)
+                
+                # Separator
+                st.markdown("---")
 
 # -------------------------
 # Manual Analyzer
