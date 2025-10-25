@@ -1,0 +1,19 @@
+{
+    "sl_percent": 1.5,
+    "target_percent": 1.0,
+    "use_volume": true,
+    "use_breakout": true,
+    "use_ema_rsi": true,
+    "use_rs": true,
+    "interval": "5m",
+    "max_symbols": 80,
+    "vol_zscore_threshold": 1.2,
+    "breakout_margin_pct": 0.2,
+    "atr_period": 7,
+    "atr_mult": 0.9,
+    "momentum_lookback": 3,
+    "rs_lookback": 3,
+    "signal_score_threshold": 10,
+    "notify_desktop": true,
+    "notify_telegram": false
+}
