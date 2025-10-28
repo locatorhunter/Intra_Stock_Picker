@@ -190,6 +190,9 @@ def render_technical_predictions(shortlisted_stocks, df_candidates, df_batch):
                 # Compact button row
                 btn_col1, btn_col2, btn_col3 = st.columns(3)
                 
+                # Variable to store message
+                action_message = None
+                
                 with btn_col1:
                     if st.button("🟢", key=f"buy_{stock}_{idx}", help="Buy", use_container_width=True):
                         st.session_state['pending_trade'] = {
@@ -197,7 +200,7 @@ def render_technical_predictions(shortlisted_stocks, df_candidates, df_batch):
                             'sl': sl_for_wl, 'target': target_for_wl, 'last_price': last_close,
                             'switch_to_paper': True
                         }
-                        st.success(f"✅ {stock} ready for BUY!")
+                        action_message = f"✅ {stock} ready for BUY! Go to Paper Trading tab."
                 
                 with btn_col2:
                     if st.button("🔴", key=f"sell_{stock}_{idx}", help="Sell", use_container_width=True):
@@ -206,7 +209,7 @@ def render_technical_predictions(shortlisted_stocks, df_candidates, df_batch):
                             'sl': sl_for_wl, 'target': target_for_wl, 'last_price': last_close,
                             'switch_to_paper': True
                         }
-                        st.success(f"✅ {stock} ready for SELL!")
+                        action_message = f"✅ {stock} ready for SELL! Go to Paper Trading tab."
                 
                 with btn_col3:
                     if stock in st.session_state.watchlist:
@@ -216,8 +219,19 @@ def render_technical_predictions(shortlisted_stocks, df_candidates, df_batch):
                             st.session_state.watchlist[stock] = {
                                 "entry": entry_for_wl, "sl": sl_for_wl, "target": target_for_wl, "status": "Active"
                             }
-                            st.success(f"Added {stock}!")
+                            action_message = f"✅ Added {stock} to watchlist!"
                             st.rerun()
+                
+            # Display compact message below buttons
+            if action_message:
+                message_html = f"""
+        <div style="margin-top:8px;padding:8px 12px;background:rgba(16,185,129,0.1);
+                    border-left:3px solid #10b981;border-radius:6px;">
+        <span style="color:#10b981;font-size:12px;font-weight:600;">{action_message}</span>
+        </div>
+        """
+                st.markdown(message_html, unsafe_allow_html=True)
+            
             
                     # ========== COLLAPSIBLE DETAILS WITH VISUALS ==========
             with st.expander(f"📊 {stock} Details", expanded=False):
