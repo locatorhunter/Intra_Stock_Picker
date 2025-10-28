@@ -1,406 +1,297 @@
-# 🎯 Stock Hunter - NSE Intraday Stock Screener
+# 📊 Stock Hunter Dashboard
 
-An advanced real-time stock screening application for Indian NSE F&O stocks with **dual scanning modes** - catch stocks at early momentum or wait for strong confirmation signals.
+A powerful, real-time stock screening and analysis platform for NSE India F&O stocks with integrated paper trading capabilities.
 
-![Python](https://img.shields.io/badge/python-3.8%2B-blue)
-![Streamlit](https://img.shields.io/badge/streamlit-1.28%2B-red)
-![License](https://img.shields.io/badge/license-MIT-green)
+![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.28+-red.svg)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
 
----
+## 🎯 Overview
 
-## 🌟 Features
+Stock Hunter Dashboard is an advanced trading tool that combines technical analysis, real-time scanning, and paper trading in one comprehensive platform. Built with Streamlit and powered by YFinance, it helps traders identify high-probability setups across multiple timeframes using a sophisticated scoring system.
 
-### 📊 Dual Scanning Modes
-- **🎯 Early Detection Mode (Recommended)**: Catches stocks in accumulation/consolidation phase BEFORE major breakouts
-- **✅ Confirmation Mode**: Waits for strong confirmation signals (traditional approach)
+## ✨ Key Features
 
-### 🔍 Advanced Technical Indicators
-- **MACD Crossovers** - Early reversal detection
-- **RSI Multi-Level Analysis** - 50-65 range for early bullish momentum
-- **Volume Accumulation** - Detects "smart money" buying before spikes
-- **Consolidation Detection** - Tight ranges near highs (pre-breakout pattern)
-- **ADX Trend Formation** - Identifies emerging trends (20-30 range)
-- **Pre-Breakout Detection** - Alerts when stocks are within 1% of breakout levels
-- **Relative Strength** - Outperformance vs NIFTY 50
-- **Candlestick Patterns** - Bullish Engulfing, Morning Star
+### 🔍 **Auto Scanner**
+- **Dual Scanning Modes:**
+  - 🐇 **Early Detection**: Catch trends before they happen
+  - ✅ **Confirmation**: Wait for validated signals
+- **Real-time scoring system** (0-15 points)
+- **Multiple technical indicators**: RSI, MACD, EMA, ADX, ATR, Volume analysis
+- **Auto-refresh** with configurable intervals
+- **Customizable filters** and thresholds
 
-### 📈 Smart Entry/Exit Management
-- **ATR-based Stop Loss** - Dynamic risk management
-- **2:1 Risk-Reward Targets** - Automatic target calculation
-- **Live Watchlist** - Track multiple positions with real-time alerts
-- **Auto SL/Target Alerts** - Desktop & Telegram notifications
+### 💹 **Paper Trading**
+- **Virtual trading environment** with real-time prices
+- **Automatic SL/Target tracking** with P/L calculation
+- **Trade management** with one-click execution
+- **Position monitoring** with live updates
+- **Trade history** and performance tracking
+- **Pre-filled trade setups** from scanner signals
 
-### 🔔 Multi-Channel Notifications
-- **Desktop Notifications** (via Plyer)
-- **Telegram Alerts** - Get signals on mobile
-- **Real-time Price Tracking** - Auto-refresh mechanism
+### 🔎 **Manual Stock Analyzer**
+- **Deep-dive technical analysis** with visual indicators
+- **Batch analysis** (multiple stocks at once)
+- **Comprehensive metrics:**
+  - Momentum indicators (RSI 7/10)
+  - Trend indicators (EMA 20/50, MACD)
+  - Strength indicators (ADX, ATR)
+  - Fundamental metrics (P/E, Market Cap, 52W range)
+- **Educational notes** for each indicator
+- **Visual progress bars** and color-coded signals
 
-### 💾 Filter Presets
-- Save/Load custom filter configurations
-- Multiple preset profiles
-- Quick strategy switching
+### 📋 **Watchlist & Alerts**
+- **Custom watchlist** with entry/SL/target levels
+- **Price alerts** (target hit, stop loss triggered)
+- **Auto-monitoring** during market hours
+- **Desktop & Telegram notifications**
 
----
+### 📚 **Trade Guide**
+- **Complete scoring system** explanation
+- **Technical indicators encyclopedia**
+- **6 optimized trading presets:**
+  - ⚡ Scalping (minutes)
+  - 📊 Intraday (hours)
+  - 🔄 Swing (2-7 days)
+  - 📅 Positional (weeks)
+  - 🏔️ Long-term (months)
+- **Risk management guidelines**
+- **Trading psychology tips**
+- **Best market timing** (IST zones)
 
 ## 🚀 Installation
 
 ### Prerequisites
 - Python 3.8 or higher
-- pip package manager
+- pip (Python package manager)
 
-### Step 1: Clone or Download
-```bash
-git clone https://github.com/yourusername/stock-hunter.git
-cd stock-hunter
-```
+### Step 1: Clone the Repository
+- git clone https://github.com/yourusername/stock-hunter-dashboard.git
+- cd stock-hunter-dashboard
+
 
 ### Step 2: Install Dependencies
-```bash
-pip install streamlit pandas yfinance numpy requests plyer streamlit-autorefresh pytz ta-lib
-```
+- pip install -r requirements.txt
 
-**Note**: `TA-Lib` installation can be tricky on Windows. Follow [this guide](https://github.com/cgohlke/talib-build/releases) for pre-built wheels.
 
 ### Step 3: Run the Application
-```bash
-streamlit run stock_hunter_early.py
-```
+- streamlit run main.py
+
 
 The app will open in your default browser at `http://localhost:8501`
 
----
+## 📦 Requirements
 
-## 📖 Usage Guide
+Create a `requirements.txt` file with:
 
-### 🎯 Quick Start
+streamlit>=1.28.0
+pandas>=1.5.0
+numpy>=1.23.0
+yfinance>=0.2.28
+pandas-ta>=0.3.14b0
+streamlit-autorefresh>=0.0.1
+pytz>=2023.3
+requests>=2.31.0
 
-1. **Select Scanning Mode**
-   - Choose between "Early Detection" or "Confirmation" mode in sidebar
-   - Early Detection: Best for catching moves early (lower risk, earlier entries)
-   - Confirmation: Best for high-confidence signals (fewer false positives)
 
-2. **Configure Filters**
-   - Adjust volume thresholds, breakout margins, RSI ranges
-   - Set signal score threshold (5-7 recommended for early detection)
+## 📁 Project Structure
 
-3. **Set Notifications**
-   - Enable Desktop notifications (instant alerts)
-   - Add Telegram Bot Token & Chat ID for mobile alerts
+stock-hunter-dashboard/
+├── main.py # Main application entry point
+├── sidebar.py # Sidebar configuration & presets
+├── ui_components.py # UI rendering components
+├── scanning_logic.py # Stock scanning algorithms
+├── functions.py # Core utility functions
+├── paper.py # Paper trading module
+├── trade_guide.py # Educational guide
+├── styles.py # CSS styling
+├── requirements.txt # Python dependencies
+├── paper_trades.csv # Paper trading data (auto-generated)
+└── README.md # This file
 
-4. **Start Scanning**
-   - App auto-refreshes based on your interval setting
-   - Shortlisted stocks appear in real-time
-   - Add promising stocks to watchlist
 
-### 🔧 Configuration Options
+## 🎮 Usage Guide
 
-#### Filters & Parameters
-| Parameter | Description | Recommended Range |
-|-----------|-------------|-------------------|
-| **Volume z-score** | Volume spike threshold | 1.2 - 2.0 (Early), 2.0+ (Confirm) |
-| **Breakout margin** | Price above previous high | 0.2% (Early), 0.5%+ (Confirm) |
-| **Signal threshold** | Minimum score to qualify | 5-7 (Early), 7-9 (Confirm) |
-| **ATR period** | Volatility calculation window | 7-14 bars |
-| **ATR multiplier** | Stop-loss distance | 0.8-1.5x ATR |
+### 1. **Configure Your Settings**
 
-#### Notification Setup
+**Sidebar → Scanner Settings:**
+- Choose **Scan Mode** (Early Detection or Confirmation)
+- Set **Timeframe** (5m, 15m, 30m, 1h)
+- Adjust **Signal Threshold** (4-10)
+- Enable/disable filters (Volume, Breakout, EMA+RSI, RS)
 
-**Telegram Configuration:**
-1. Create bot via [@BotFather](https://t.me/botfather)
+**Or Load a Preset:**
+- Select from 6 pre-configured strategies
+- Modify and save custom presets
+
+### 2. **Scan Stocks**
+
+**Auto Scanner Tab:**
+- Scanner automatically runs on page load
+- View **Qualified Stocks** table
+- Check **Technical Predictions** for detailed analysis
+- Click **🟢 BUY** or **🔴 SELL** to setup trades
+
+### 3. **Analyze Manually**
+
+**Manual Analysis Tab:**
+- Enter stock symbols (comma-separated)
+- View comprehensive analysis with:
+  - Visual progress bars for RSI/ADX
+  - Trend direction indicators
+  - Fundamental metrics
+  - Educational notes
+
+### 4. **Paper Trade**
+
+**Paper Trading Tab:**
+- Execute trades from scanner or manually
+- Monitor live P/L
+- Manage positions
+- Track performance
+
+### 5. **Learn & Improve**
+
+**Trade Guide Tab:**
+- Understand the scoring system
+- Learn technical indicators
+- Review trading strategies
+- Master risk management
+
+## 📊 Scoring System
+
+**How Stocks are Scored (0-15 points):**
+
+| Indicator | Max Points | Criteria |
+|-----------|-----------|----------|
+| Volume Surge | 3 | Z-score > threshold |
+| Price Breakout | 3 | Above resistance |
+| MACD Crossover | 2 | Bullish cross |
+| RSI Momentum | 2 | Optimal range (50-70) |
+| EMA Alignment | 2 | Price > EMA20 > EMA50 |
+| ADX Strength | 1 | ADX > 25 |
+| Consolidation | 1 | Tight range |
+| Relative Strength | 1 | Outperforming market |
+
+**Qualification:** Stocks scoring above your threshold are flagged as opportunities.
+
+## ⚙️ Configuration Examples
+
+### Intraday Trading
+Scan Mode: Early Detection
+Interval: 15m
+Signal Threshold: 6
+Stop Loss: 2.0%
+Target: 5.0%
+
+
+### Positional Trading
+Scan Mode: Early Detection
+Interval: 1h
+Signal Threshold: 6
+Stop Loss: 3.5%
+Target: 10.0%
+
+
+## 🔔 Notifications
+
+### Desktop Notifications
+Enable in sidebar → Notifications section
+
+### Telegram Notifications
+1. Create a Telegram bot via [@BotFather](https://t.me/botfather)
 2. Get your Chat ID from [@userinfobot](https://t.me/userinfobot)
-3. Enter credentials in Notification Settings
-4. Test connection with "Test Telegram Alert" button
+3. Enter Bot Token and Chat ID in sidebar
+4. Enable Telegram notifications
 
----
+## 🛡️ Risk Management
 
-## 🎓 Understanding the Modes
+**Never risk more than 2% of capital per trade**
 
-### 🎯 Early Detection Mode
+| Trading Style | Max Positions | Capital/Trade | Daily Loss Limit |
+|--------------|---------------|---------------|------------------|
+| Scalping | 2-3 | 5-10% | 1.5% |
+| Intraday | 2-4 | 10-15% | 2% |
+| Swing | 3-5 | 15-20% | 5% |
+| Positional | 4-6 | 15-25% | 10% |
+| Long-Term | 5-8 | 20-30% | No daily limit |
 
-**Philosophy**: Catch stocks BEFORE the crowd notices them
+## 🎯 Best Trading Times (IST)
 
-**Key Signals**:
-- MACD crossing above signal line (even if negative)
-- RSI crossing 50 upward (not waiting for 70)
-- Volume accumulation (1.2-2x average)
-- Price consolidating within 3% near highs
-- ADX rising from 20-30 (trend forming)
-- Within 1% of breakout level
+- **9:15-10:30 AM**: Opening volatility (Scalping, Intraday)
+- **10:30 AM-2:00 PM**: Consolidation (Setup identification)
+- **2:00-3:30 PM**: Afternoon push (Intraday, Swing entries)
 
-**Best For**:
-- Swing traders
-- Position traders
-- Those who want to enter before major moves
+## 🔧 Customization
 
-**Risk Profile**: Medium (earlier entries mean more false signals, but better risk/reward)
+### Add Custom Indicators
+Edit `functions.py` → `compute_indicators()` function
 
-### ✅ Confirmation Mode
-
-**Philosophy**: Wait for strong confirmation before entering
-
-**Key Signals**:
-- RSI > 70 (strong momentum)
-- Volume spike (2+ standard deviations)
-- Confirmed breakout above previous high
-- Price decisively above EMA20
-
-**Best For**:
-- Conservative traders
-- Those who prefer fewer, higher-quality signals
-- Day traders who want confirmed momentum
-
-**Risk Profile**: Lower (fewer false signals, but entries come later)
-
----
-
-## 📊 Score Breakdown
-
-### Early Detection Scoring
-| Signal | Points |
-|--------|--------|
-| MACD early reversal | 3 |
-| Approaching breakout (<1%) | 3 |
-| Volume accumulation | 2 |
-| RSI early bullish (50-65) | 2 |
-| Consolidation near highs | 2 |
-| ADX trend forming | 2 |
-| Fresh breakout | 2 |
-| Price above EMA20 | 1 |
-| Outperforming NIFTY | 1 |
-| Candle patterns | 1 |
-
-**Total Possible**: 13+ points
-
-### Confirmation Mode Scoring
-| Signal | Points |
-|--------|--------|
-| Volume spike (2+ SD) | 2 |
-| Breakout confirmed | 2 |
-| RSI > 70 | 2 |
-| Price above EMA20 | 1 |
-| Outperforming NIFTY | 1 |
-| Candle patterns | 1 |
-
-**Total Possible**: 7+ points
-
----
-
-## 🛠️ Advanced Features
-
-### Filter Presets
-Save your favorite configurations:
-1. Configure all parameters
+### Create New Presets
+1. Configure settings in sidebar
 2. Enter preset name
-3. Click "💾 Save as '[name]'"
-4. Load anytime from "⚙️ Saved Filters"
+3. Click "💾 Save as [name]"
 
-### Manual Analyzer
-Test any stock manually:
-1. Expand "📝 Manual Stock Analyzer"
-2. Enter comma-separated symbols (e.g., `RELIANCE,TCS,INFY`)
-3. View detailed analysis with entry/exit levels
-4. Add to watchlist if qualified
+### Modify Scoring Logic
+Edit `scanning_logic.py` → `scan_stock_original()` or `scan_stock_early()`
 
-### Watchlist Management
-- Automatically tracks entry, SL, target prices
-- Real-time alerts when SL/Target hit
-- Remove stocks manually or auto-remove on exit
-- Persists across page refreshes
+## 📈 Performance Tips
 
----
+1. **Start with Paper Trading** - Practice for 2 weeks minimum
+2. **Use Conservative Presets** - Begin with higher thresholds
+3. **Focus on Quality** - Don't chase every signal
+4. **Keep a Journal** - Track your decisions and outcomes
+5. **Review Weekly** - Analyze performance and adjust
 
-## 📱 Screenshots
+## ⚠️ Important Notes
 
-### Main Dashboard
-```
-┌─────────────────────────────────────────┐
-│  🎯 Scan Strategy: Early Detection      │
-│  ✅ Scanned 80 stocks. 5 qualified     │
-├─────────────────────────────────────────┤
-│  Symbol  | Score | Last | Entry | SL   │
-│  RELIANCE|   8   | 2450 | 2450  | 2420 │
-│  TCS     |   7   | 3560 | 3560  | 3540 │
-└─────────────────────────────────────────┘
-```
-
----
-
-## 🔬 Technical Details
-
-### Architecture
-- **Frontend**: Streamlit (reactive UI)
-- **Data Source**: Yahoo Finance API (yfinance)
-- **Indicators**: TA-Lib (technical analysis)
-- **Refresh**: Auto-refresh with configurable intervals
-- **State Management**: Streamlit session state
-
-### Scan Flow
-```
-1. Fetch batch data (5-day history, configured interval)
-2. Compute indicators (EMA, RSI, MACD, ATR, ADX, Volume)
-3. Apply selected mode logic (Early/Confirmation)
-4. Calculate scores
-5. Filter by threshold
-6. Generate entry/SL/target
-7. Send notifications
-8. Update watchlist
-```
-
-### Performance
-- **Scan Speed**: ~80 stocks in 10-15 seconds
-- **Memory Usage**: ~200-300 MB
-- **Cache**: 5-minute TTL for price data
-
----
-
-## 🔒 Security & Privacy
-
-- **No data storage**: All data is fetched real-time
-- **No account required**: Works standalone
-- **API credentials**: Only stored in session (not persisted)
-- **Open source**: Review code for transparency
-
----
-
-## 🐛 Troubleshooting
-
-### TA-Lib Installation Fails
-**Windows**:
-```bash
-pip install TA_Lib-0.4.28-cp39-cp39-win_amd64.whl
-```
-Download wheel from [here](https://github.com/cgohlke/talib-build/releases)
-
-**macOS**:
-```bash
-brew install ta-lib
-pip install ta-lib
-```
-
-**Linux**:
-```bash
-sudo apt-get install ta-lib
-pip install ta-lib
-```
-
-### No Stocks Shortlisted
-- Lower the "Signal score threshold"
-- Adjust volume/breakout margins
-- Try Early Detection mode
-- Check if market is open (9:15 AM - 3:30 PM IST)
-
-### Telegram Not Working
-- Verify bot token is correct
-- Ensure you've started a chat with the bot
-- Check Chat ID is correct (should be a number)
-- Click "Test Telegram Alert" button
-
-### App Crashes/Freezes
-- Reduce "Max F&O symbols to scan" (try 50)
-- Increase auto-refresh interval (180-300 sec)
-- Close other resource-heavy applications
-
----
-
-## 📚 Resources
-
-### Learning Materials
-- [Technical Analysis Basics](https://www.investopedia.com/technical-analysis-4689657)
-- [RSI Strategy Guide](https://www.investopedia.com/terms/r/rsi.asp)
-- [MACD Explained](https://www.investopedia.com/terms/m/macd.asp)
-- [Volume Analysis](https://www.investopedia.com/articles/technical/02/010702.asp)
-
-### Related Tools
-- [TradingView](https://www.tradingview.com/) - Charting
-- [Screener.in](https://www.screener.in/) - Fundamental analysis
-- [ChartInk](https://chartink.com/) - Advanced screeners
-
----
-
-## ⚠️ Disclaimer
-
-**This tool is for educational and informational purposes only.**
-
-- Not financial advice
-- Past performance doesn't guarantee future results
-- Always do your own research (DYOR)
-- Consult a registered financial advisor
-- Use at your own risk
-- Developer not liable for trading losses
-
-**Trading involves substantial risk of loss.**
-
----
+- **Market Hours**: Best results during NSE trading hours (9:15 AM - 3:30 PM IST)
+- **Internet Required**: Fetches real-time data from Yahoo Finance
+- **For Educational Use**: Not financial advice - use at your own risk
+- **Paper Trade First**: Always test strategies before risking real money
 
 ## 🤝 Contributing
 
-Contributions welcome! Areas for improvement:
+Contributions are welcome! Please:
 
-- [ ] Add more technical indicators (Bollinger Bands, Stochastic)
-- [ ] Support for custom stock lists
-- [ ] Backtesting functionality
-- [ ] Machine learning predictions
-- [ ] Mobile app version
-- [ ] Database integration for historical tracking
-
-**How to contribute**:
 1. Fork the repository
-2. Create feature branch (`git checkout -b feature/AmazingFeature`)
+2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
 3. Commit changes (`git commit -m 'Add AmazingFeature'`)
 4. Push to branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
----
-
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
----
+## ⚠️ Disclaimer
 
-## 👨‍💻 Author
+**IMPORTANT:** This software is for educational and research purposes only. 
 
-**Vijay S**
+- This is **NOT financial advice**
+- Past performance does not guarantee future results
+- Trading stocks involves risk of loss
+- The developers are not responsible for any financial losses
+- Always consult with a qualified financial advisor
+- Use paper trading to test strategies before risking real money
 
-- GitHub: [@yourusername](https://github.com/yourusername)
+**By using this software, you acknowledge that you understand the risks involved in trading and accept full responsibility for your trading decisions.**
+
+## 📞 Support
+
+For questions, issues, or feature requests:
+- Open an issue on GitHub
 - Email: your.email@example.com
 
----
+## 🌟 Acknowledgments
 
-## 🙏 Acknowledgments
-
-- [Streamlit](https://streamlit.io/) - Amazing framework
-- [Yahoo Finance](https://finance.yahoo.com/) - Free market data
-- [TA-Lib](https://ta-lib.org/) - Technical analysis library
-- Trading community for inspiration and feedback
+- Built with [Streamlit](https://streamlit.io/)
+- Market data from [Yahoo Finance](https://finance.yahoo.com/)
+- Technical indicators via [Pandas TA](https://github.com/twopirllc/pandas-ta)
 
 ---
 
-## 📈 Roadmap
+**Made with ❤️ for Indian stock traders**
 
-### Version 2.0 (Planned)
-- [ ] Backtesting engine with historical data
-- [ ] Multi-timeframe analysis
-- [ ] Options chain analysis
-- [ ] Portfolio tracking
-- [ ] Custom indicator builder
-- [ ] Export to Excel/PDF
-
-### Version 3.0 (Future)
-- [ ] Machine learning price predictions
-- [ ] Sentiment analysis from news/social media
-- [ ] Paper trading simulation
-- [ ] Discord/Slack integration
-- [ ] Web API for mobile apps
-
----
-
-## ⭐ Star History
-
-If you find this project helpful, please consider giving it a star!
-
----
-
-**Happy Trading! 📈🎯**
-
-*Remember: The best trade is the one that fits YOUR strategy and risk tolerance.*
+**Happy Trading! 📈🚀**
+**Vijay S**
