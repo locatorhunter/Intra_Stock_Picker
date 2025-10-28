@@ -41,20 +41,26 @@ CHAT_ID = st.session_state.CHAT_ID
 #------------------------
 
 def safe_notify(title, msg):
+    notify_desktop = st.session_state.get("notify_desktop", True)
     if notify_desktop:
         try:
             notification.notify(title=title, message=msg, timeout=6)
         except Exception as e:
             st.warning(f"Desktop notify error: {e}")
 
+
 def safe_telegram_send(text):
+    notify_telegram = st.session_state.get("notify_telegram", False)
+    BOT_TOKEN = st.session_state.get("BOT_TOKEN", "")
+    CHAT_ID = st.session_state.get("CHAT_ID", "")
+
     if not notify_telegram or not BOT_TOKEN or not CHAT_ID:
         print("DEBUG: Telegram disabled or credentials missing.")
         return False, "Telegram disabled or credentials missing"
+
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     try:
         resp = requests.get(url, params={"chat_id": CHAT_ID, "text": text}, timeout=5)
-        
         if resp.status_code == 200:
             print("DEBUG: Telegram send SUCCESS (Status 200).")
             return True, "OK"
@@ -67,50 +73,119 @@ def safe_telegram_send(text):
         print(f"DEBUG: Telegram send EXCEPTION. Error: {str(e)}")
         return False, str(e)
 
+
+#------------------------
+# NOTIFICATION SECTION (FIXED)
+#------------------------
+
 import time
 
-def notify_stock(symbol, last_price, entry=None, stop_loss=None, target=None):
-    """Send notifications for shortlisted stocks"""
-    timestamp = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
-    msg = f"📢 {symbol} shortlisted!\n💵 Last: {last_price}\n⏰ Time: {timestamp}"
-    if entry: msg += f"\n🟢 Entry: {entry:.2f}"
-    if stop_loss: msg += f"\n❌ Stop-Loss: {stop_loss:.2f}"
-    if target: msg += f"\n🏆 Target: {target:.2f}"
-    
-    # Get values from session state
-    notify_desktop_val = st.session_state.get('notify_desktop', True)
-    notify_telegram_val = st.session_state.get('notify_telegram', True)
-    bot_token_val = st.session_state.get('BOT_TOKEN', '')
-    chat_id_val = st.session_state.get('CHAT_ID', '')
-    
-    print(f"DEBUG notify_stock: Desktop={notify_desktop_val}, Telegram={notify_telegram_val}, Token={bool(bot_token_val)}, ChatID={bool(chat_id_val)}")
-    
-    # Desktop notification
-    if notify_desktop_val:
+def safe_notify(title, msg):
+    """Safe desktop notification (reads from session state)"""
+    notify_desktop = st.session_state.get("notify_desktop", True)
+    if notify_desktop:
         try:
-            safe_notify(f"📈 NSE Picker: {symbol}", msg)
-            print("Desktop notification sent.")
+            notification.notify(title=title, message=msg, timeout=6)
+            print(f"[INFO] Desktop notification sent: {title}")
         except Exception as e:
-            print(f"Desktop error: {e}")
-    
-    # Telegram notification with rate limiting
-    if notify_telegram_val and bot_token_val and chat_id_val:
-        print(f"Sending Telegram for {symbol}...")
-        url = f"https://api.telegram.org/bot{bot_token_val}/sendMessage"
-        try:
-            resp = requests.get(url, params={"chat_id": chat_id_val, "text": msg}, timeout=5)
-            
-            if resp.status_code == 200:
-                print("Telegram sent successfully!")
-                # ADD DELAY to prevent rate limiting
-                time.sleep(0.5)  # 500ms delay between messages
-            else:
-                error_data = resp.json()
-                error_msg = error_data.get("description", f"HTTP {resp.status_code}")
-                print(f"Telegram failed: {error_msg}")
-        except Exception as e:
-            print(f"Telegram exception: {str(e)}")
+            st.warning(f"Desktop notify error: {e}")
 
+
+def safe_telegram_send(text):
+    """Safe Telegram notification (reads from session state)"""
+    notify_telegram = st.session_state.get("notify_telegram", False)
+    BOT_TOKEN = st.session_state.get("BOT_TOKEN", "")
+    CHAT_ID = st.session_state.get("CHAT_ID", "")
+
+    if not notify_telegram or not BOT_TOKEN or not CHAT_ID:
+        print("DEBUG: Telegram disabled or credentials missing.")
+        return False, "Telegram disabled or credentials missing"
+
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    try:
+        resp = requests.get(url, params={"chat_id": CHAT_ID, "text": text}, timeout=5)
+        if resp.status_code == 200:
+            print("DEBUG: Telegram send SUCCESS (Status 200).")
+            return True, "OK"
+        else:
+            data = resp.json()
+            error_msg = data.get("description", f"HTTP {resp.status_code}")
+            print(f"DEBUG: Telegram send FAILED (Status {resp.status_code}). Error: {error_msg}")
+            return False, error_msg
+    except Exception as e:
+        print(f"DEBUG: Telegram send EXCEPTION. Error: {str(e)}")
+        return False, str(e)
+
+
+def notify_stock(symbol, last_price, entry=None, stop_loss=None, target=None, score=None, reasons=None):
+    """Send detailed notifications for shortlisted stocks — clean, emoji-free criteria"""
+    timestamp = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
+
+    # --- Base trade info ---
+    msg = (
+        f"📢 <b>{symbol}</b> shortlisted!\n"
+        f"💵 <b>Last:</b> ₹{last_price:.2f}\n"
+        f"⏰ <b>Time:</b> {timestamp}"
+    )
+
+    # --- Trade levels ---
+    if entry:
+        msg += f"\n🟢 <b>Entry:</b> ₹{entry:.2f}"
+    if stop_loss:
+        msg += f"\n❌ <b>Stop-Loss:</b> ₹{stop_loss:.2f}"
+    if target:
+        msg += f"\n🏆 <b>Target:</b> ₹{target:.2f}"
+    if score is not None:
+        msg += f"\n🎯 <b>Score:</b> {score}"
+
+    # --- Passed criteria (no emojis, just clean text) ---
+    if reasons and isinstance(reasons, list):
+        short_reasons = reasons[:8]
+        msg += "\n\n<b>Passed Criteria:</b>"
+        for r in short_reasons:
+            msg += f"\n• {r}"
+        if len(reasons) > 8:
+            msg += f"\n…and {len(reasons) - 8} more."
+    elif reasons:
+        msg += f"\n\n<b>Reason:</b> {reasons}"
+
+    # --- Convert to plain text for desktop ---
+    plain_msg = (
+        msg.replace("<b>", "")
+           .replace("</b>", "")
+           .replace("&nbsp;", " ")
+           .replace("• ", "- ")
+    )
+
+    print(f"[DEBUG notify_stock] Desktop={st.session_state.get('notify_desktop')}, "
+          f"Telegram={st.session_state.get('notify_telegram')}, "
+          f"Token={bool(st.session_state.get('BOT_TOKEN'))}, "
+          f"ChatID={bool(st.session_state.get('CHAT_ID'))}")
+
+    # --- Desktop notification ---
+    safe_notify(f"📈 NSE Picker: {symbol}", plain_msg)
+
+    # --- Telegram notification (HTML formatted) ---
+    notify_telegram = st.session_state.get("notify_telegram", False)
+    BOT_TOKEN = st.session_state.get("BOT_TOKEN", "")
+    CHAT_ID = st.session_state.get("CHAT_ID", "")
+    if notify_telegram and BOT_TOKEN and CHAT_ID:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        try:
+            requests.get(
+                url,
+                params={
+                    "chat_id": CHAT_ID,
+                    "text": msg,
+                    "parse_mode": "HTML"
+                },
+                timeout=5
+            )
+            print(f"[OK] Telegram sent for {symbol}")
+        except Exception as e:
+            print(f"[ERR] Telegram send failed: {e}")
+
+# --- FILTER PRESET MANAGEMENT ---
 FILTER_DIR = "filter_presets" 
 
 # --- FILTER UTILITY FUNCTIONS ---
@@ -973,7 +1048,7 @@ for i, sym in enumerate(fo_symbols):
         shortlisted_stocks.append(sym)
         
         if sym not in st.session_state.notified_today:
-            notify_stock(sym, last_close, entry, stop, target)
+            notify_stock(sym, last_close, entry, stop, target, score, reasons)
             st.session_state.notified_today.add(sym)
 
 progress.empty()
