@@ -210,8 +210,6 @@ with tab_main:
 # TAB 2: PAPER TRADING
 # -----------------------------------------------------------------------------
 with tab_paper:
-    st.markdown("### 💹 Paper Trading")
-    
     # Show pending trade notification if coming from scanner
     if st.session_state.get('pending_trade') and st.session_state['pending_trade'].get('switch_to_paper'):
         st.info("🎯 You have a pending trade from the scanner! Scroll down to execute it.")

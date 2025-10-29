@@ -852,10 +852,9 @@ Score: {score}/{settings['signal_score_threshold']}
                         st.rerun()
             
             with col_btn4:
-                if st.button("📈 Open TradingView", key=f"chart_manual_{manual_symbol}_{idx}", use_container_width=True):
+                if st.button("📈 TradingView", key=f"chart_manual_{manual_symbol}_{idx}", use_container_width=True):
                     st.markdown(f'<a href="https://www.tradingview.com/chart/?symbol=NSE%3A{manual_symbol}" target="_blank">Open Chart →</a>', unsafe_allow_html=True)
             
-            st.markdown("---")
 
 
 def render_watchlist(df_batch):
