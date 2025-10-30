@@ -4,27 +4,52 @@ styles.py - All CSS styling for the Stock Hunter Dashboard
 
 APP_STYLE = """
 <style>
-/* ===== Base App Styling ===== */
-[data-testid="stAppViewContainer"] {
-    background: linear-gradient(180deg, #0b1120 0%, #101b3a 100%);
-    color: #e6eef8;
-    font-family: 'Inter', sans-serif;
+/* ===== CSS Variables ===== */
+:root {
+    /* Colors */
+    --primary-gradient-start: #0b1120;
+    --primary-gradient-end: #101b3a;
+    --sidebar-gradient-start: #111827;
+    --sidebar-gradient-end: #1e293b;
+    --accent-color: #6366f1;
+    --accent-color-hover: #818cf8;
+    --text-primary: #e6eef8;
+    --text-secondary: #dbeafe;
+    --text-header: #93c5fd;
+    --border-color: rgba(255,255,255,0.08);
+    
+    /* Shadows */
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.25);
+    --shadow-md: 0 4px 14px rgba(0,0,0,0.35);
+    --shadow-lg: 0 6px 20px rgba(0,0,0,0.45);
+    
+    /* Spacing */
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
 }
 
-/* Sidebar background and text */
+/* ===== Base App Styling ===== */
+[data-testid="stAppViewContainer"] {
+    background: linear-gradient(180deg, var(--primary-gradient-start) 0%, var(--primary-gradient-end) 100%);
+    color: var(--text-primary);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Sidebar styling */
 [data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #111827 0%, #1e293b 100%);
-    color: #f3f4f6;
-    border-right: 1px solid rgba(255,255,255,0.05);
-    box-shadow: 4px 0 16px rgba(0,0,0,0.4);
+    background: linear-gradient(180deg, var(--sidebar-gradient-start) 0%, var(--sidebar-gradient-end) 100%);
+    color: var(--text-primary);
+    border-right: 1px solid var(--border-color);
+    box-shadow: var(--shadow-lg);
 }
 [data-testid="stSidebar"] * {
-    color: #dbeafe !important;
+    color: var(--text-secondary) !important;
 }
 [data-testid="stSidebar"] h1, 
 [data-testid="stSidebar"] h2, 
 [data-testid="stSidebar"] h3 {
-    color: #93c5fd !important;
+    color: var(--text-header) !important;
 }
 
 /* ===== Header Banner ===== */
@@ -54,34 +79,46 @@ APP_STYLE = """
 .card {
     background: rgba(255,255,255,0.04);
     border-radius: 12px;
-    padding: 14px 16px;
-    margin-bottom: 12px;
-    border: 1px solid rgba(255,255,255,0.08);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    padding: 14px var(--spacing-md);
+    margin-bottom: var(--spacing-sm);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
     transition: transform 0.15s ease, box-shadow 0.15s ease;
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
 }
 .card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+    box-shadow: var(--shadow-md);
 }
 
-/* ===== Watchlist Table ===== */
-.watchlist-container { font-size: 14px; margin-top: 8px; }
+/* ===== Responsive Tables ===== */
+.watchlist-container { 
+    font-size: 14px; 
+    margin-top: var(--spacing-sm);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
 table {
     border-collapse: collapse;
     width: 100%;
+    min-width: 600px; /* Ensure table doesn't get too narrow */
 }
 thead tr {
     background-color: rgba(255,255,255,0.08);
     font-weight: 600;
+    position: sticky;
+    top: 0;
+    z-index: 1;
 }
 tbody tr:hover {
     background-color: rgba(255,255,255,0.07);
     transition: background 0.2s ease-in-out;
 }
 td, th {
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color);
+    padding: var(--spacing-sm) 12px;
+    white-space: nowrap;
 }
 
 /* ===== Badges & Tags ===== */
@@ -126,9 +163,13 @@ div.stButton > button:hover {
     padding-left: 10px;
 }
 
-/* ===== Scrollbar ===== */
+/* ===== Enhanced Scrollbar ===== */
 ::-webkit-scrollbar {
     width: 8px;
+    height: 8px; /* For horizontal scrolling */
+}
+::-webkit-scrollbar-track {
+    background: rgba(255,255,255,0.05);
 }
 ::-webkit-scrollbar-thumb {
     background: rgba(255,255,255,0.15);
@@ -136,6 +177,28 @@ div.stButton > button:hover {
 }
 ::-webkit-scrollbar-thumb:hover {
     background: rgba(255,255,255,0.25);
+}
+
+/* ===== Media Queries ===== */
+@media screen and (max-width: 768px) {
+    .header-banner h1 {
+        font-size: 24px;
+    }
+    .header-banner p {
+        font-size: 14px;
+    }
+    .card {
+        padding: 12px;
+    }
+    .watchlist-container {
+        margin: 0 -12px; /* Negative margin to allow full-width scrolling */
+    }
+    .section-title {
+        font-size: 18px;
+    }
+    td, th {
+        padding: 6px 10px;
+    }
 }
 </style>
 """

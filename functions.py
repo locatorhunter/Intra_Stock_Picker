@@ -13,6 +13,33 @@ import pytz
 import json
 import os
 import paper
+import logging
+from typing import List, Dict, Tuple, Optional, Union
+
+# Set up logging before any other operations
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
+# Import optional dependencies with fallbacks
+try:
+    import pandas_ta as ta
+    PANDAS_TA_AVAILABLE = True
+    logger.info("pandas_ta loaded successfully")
+except ImportError:
+    PANDAS_TA_AVAILABLE = False
+    logger.warning("pandas_ta not available - attempting to use basic calculations")
+
+# Make talib optional
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 # Make talib optional - use pandas-ta instead on cloud
 try:
@@ -32,29 +59,51 @@ FILTER_DIR = "filter_presets"
 # Enhanced Notification Functions
 # -------------------------
 
-def safe_notify(title, msg, timeout=8, icon=None):
-    """Enhanced desktop notification with better error handling"""
+def safe_notify(title: str, msg: str, timeout: int = 8, 
+               icon: Optional[str] = None) -> bool:
+    """
+    Send desktop notification with enhanced error handling and logging
+    
+    Args:
+        title: Notification title
+        msg: Notification message
+        timeout: How long notification should remain visible (seconds)
+        icon: Path to .ico file for notification icon
+    
+    Returns:
+        bool: True if notification was sent successfully, False otherwise
+    """
     notify_desktop = st.session_state.get("notify_desktop", True)
     
     if not notify_desktop:
-        return
+        logger.info("Desktop notifications are disabled")
+        return False
     
     try:
+        # Validate inputs
+        if not isinstance(title, str) or not isinstance(msg, str):
+            raise ValueError("Title and message must be strings")
+            
         # Truncate message if too long (Windows has ~256 char limit)
         max_len = 250
         if len(msg) > max_len:
             msg = msg[:max_len-3] + "..."
+            logger.debug(f"Message truncated to {max_len} characters")
         
         notification.notify(
             title=title,
             message=msg,
-            timeout=timeout,
-            app_icon=icon  # Optional: Path to .ico file
+            timeout=max(1, min(timeout, 30)),  # Ensure timeout is between 1-30
+            app_icon=icon
         )
-        print(f"[✓] Desktop notification sent: {title}")
+        logger.info(f"Desktop notification sent: {title}")
         return True
+    
+    except ValueError as ve:
+        logger.error(f"Validation error in safe_notify: {ve}")
+        return False
     except Exception as e:
-        print(f"[✗] Desktop notify error: {e}")
+        logger.error(f"Desktop notification error: {str(e)}", exc_info=True)
         return False
 
 
@@ -521,68 +570,228 @@ def extract_symbol_df(df_batch_local: pd.DataFrame, sym: str) -> pd.DataFrame:
 # Technical Analysis Functions
 # -------------------------
 
-def compute_indicators(df, atr_period=7):
-    """Compute technical indicators on price data"""
-    df = df.rename(columns=str.title).copy()
-    for c in ["Open", "High", "Low", "Close", "Volume"]:
-        if c not in df.columns:
+def compute_indicators(df: pd.DataFrame, atr_period: int = 7) -> pd.DataFrame:
+    """
+    Compute technical indicators on price data with fallback options
+    
+    Args:
+        df: DataFrame with OHLCV data
+        atr_period: Period for ATR calculation
+    
+    Returns:
+        DataFrame with additional technical indicator columns
+    """
+    try:
+        df = df.rename(columns=str.title).copy()
+        required_cols = ["Open", "High", "Low", "Close", "Volume"]
+        if not all(col in df.columns for col in required_cols):
+            logger.error("Missing required columns in dataframe")
             return df
+        
+        # Convert to float to ensure compatibility
+        for col in required_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # EMA calculation (pandas native)
+        df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
+        
+        # ATR calculation
+        if TALIB_AVAILABLE:
+            try:
+                df["ATR"] = talib.ATR(df["High"].values, df["Low"].values, 
+                                     df["Close"].values, timeperiod=atr_period)
+            except Exception as e:
+                logger.warning(f"TALib ATR calculation failed: {e}")
+                if PANDAS_TA_AVAILABLE:
+                    df["ATR"] = ta.atr(df["High"], df["Low"], df["Close"], length=atr_period)
+                else:
+                    # Basic ATR calculation if neither library is available
+                    tr1 = df["High"] - df["Low"]
+                    tr2 = abs(df["High"] - df["Close"].shift(1))
+                    tr3 = abs(df["Low"] - df["Close"].shift(1))
+                    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                    df["ATR"] = tr.rolling(window=atr_period).mean()
+        else:
+            if PANDAS_TA_AVAILABLE:
+                df["ATR"] = ta.atr(df["High"], df["Low"], df["Close"], length=atr_period)
+            else:
+                # Basic ATR calculation
+                tr1 = df["High"] - df["Low"]
+                tr2 = abs(df["High"] - df["Close"].shift(1))
+                tr3 = abs(df["Low"] - df["Close"].shift(1))
+                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                df["ATR"] = tr.rolling(window=atr_period).mean()
+        
+        # RSI calculations
+        if TALIB_AVAILABLE:
+            try:
+                df["RSI7"] = talib.RSI(df["Close"].values, timeperiod=7)
+                df["RSI10"] = talib.RSI(df["Close"].values, timeperiod=10)
+            except Exception as e:
+                logger.warning(f"TALib RSI calculation failed: {e}")
+                if PANDAS_TA_AVAILABLE:
+                    df["RSI7"] = ta.rsi(df["Close"], length=7)
+                    df["RSI10"] = ta.rsi(df["Close"], length=10)
+                else:
+                    # Basic RSI calculation if neither library is available
+                    def calculate_rsi(series, periods):
+                        delta = series.diff()
+                        gain = (delta.where(delta > 0, 0)).rolling(window=periods).mean()
+                        loss = (-delta.where(delta < 0, 0)).rolling(window=periods).mean()
+                        rs = gain / loss
+                        return 100 - (100 / (1 + rs))
+                    
+                    df["RSI7"] = calculate_rsi(df["Close"], 7)
+                    df["RSI10"] = calculate_rsi(df["Close"], 10)
+        else:
+            if PANDAS_TA_AVAILABLE:
+                df["RSI7"] = ta.rsi(df["Close"], length=7)
+                df["RSI10"] = ta.rsi(df["Close"], length=10)
+            else:
+                # Basic RSI calculation
+                def calculate_rsi(series, periods):
+                    delta = series.diff()
+                    gain = (delta.where(delta > 0, 0)).rolling(window=periods).mean()
+                    loss = (-delta.where(delta < 0, 0)).rolling(window=periods).mean()
+                    rs = gain / loss
+                    return 100 - (100 / (1 + rs))
+                
+                df["RSI7"] = calculate_rsi(df["Close"], 7)
+                df["RSI10"] = calculate_rsi(df["Close"], 10)
+            
+        # Volume indicators
+        df["AvgVol20"] = df["Volume"].rolling(20).mean()
+        df["VolStd20"] = df["Volume"].rolling(20).std()
+        df["Vol_Trend"] = df["Volume"].rolling(5).mean() / df["Volume"].rolling(20).mean()
+        
+    except Exception as e:
+        logger.error(f"Error computing basic indicators: {str(e)}", exc_info=True)
+        return df
     
-    df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
-    
+    # MACD calculation
     try:
-        highs = df["High"].astype(float).values
-        lows = df["Low"].astype(float).values
-        closes = df["Close"].astype(float).values
-        df["ATR"] = talib.ATR(highs, lows, closes, timeperiod=atr_period)
-    except Exception:
-        df["ATR"] = np.nan
-    
-    try:
-        df["RSI7"] = talib.RSI(df["Close"].astype(float).values, timeperiod=7)
-        df["RSI10"] = talib.RSI(df["Close"].astype(float).values, timeperiod=10)
-    except Exception:
-        df["RSI7"] = np.nan
-        df["RSI10"] = np.nan
-    
-    df["AvgVol20"] = df["Volume"].rolling(20).mean()
-    df["VolStd20"] = df["Volume"].rolling(20).std()
-    df["Vol_Trend"] = df["Volume"].rolling(5).mean() / df["Volume"].rolling(20).mean()
-    
-    try:
-        macd, signal, hist = talib.MACD(df["Close"].astype(float).values, fastperiod=12, slowperiod=26, signalperiod=9)
-        df["MACD"] = macd
-        df["MACD_signal"] = signal
-        df["MACD_hist"] = hist
-    except Exception:
+        if TALIB_AVAILABLE:
+            try:
+                macd, signal, hist = talib.MACD(df["Close"].astype(float).values, 
+                                               fastperiod=12, slowperiod=26, signalperiod=9)
+                df["MACD"] = macd
+                df["MACD_signal"] = signal
+                df["MACD_hist"] = hist
+            except Exception as e:
+                logger.warning(f"TALib MACD calculation failed: {e}")
+                macd = ta.macd(df["Close"], fast=12, slow=26, signal=9)
+                df["MACD"] = macd["MACD_12_26_9"]
+                df["MACD_signal"] = macd["MACDs_12_26_9"]
+                df["MACD_hist"] = macd["MACDh_12_26_9"]
+        else:
+            macd = ta.macd(df["Close"], fast=12, slow=26, signal=9)
+            df["MACD"] = macd["MACD_12_26_9"]
+            df["MACD_signal"] = macd["MACDs_12_26_9"]
+            df["MACD_hist"] = macd["MACDh_12_26_9"]
+    except Exception as e:
+        logger.error(f"Error calculating MACD: {str(e)}")
         df["MACD"] = np.nan
         df["MACD_signal"] = np.nan
         df["MACD_hist"] = np.nan
     
+    # ADX calculation
     try:
-        df["ADX"] = talib.ADX(df["High"].astype(float).values, df["Low"].astype(float).values, df["Close"].astype(float).values, timeperiod=14)
-    except Exception:
+        if TALIB_AVAILABLE:
+            try:
+                df["ADX"] = talib.ADX(df["High"].astype(float).values, 
+                                    df["Low"].astype(float).values, 
+                                    df["Close"].astype(float).values, 
+                                    timeperiod=14)
+            except Exception as e:
+                logger.warning(f"TALib ADX calculation failed: {e}")
+                df["ADX"] = ta.adx(df["High"], df["Low"], df["Close"], length=14)["ADX_14"]
+        else:
+            df["ADX"] = ta.adx(df["High"], df["Low"], df["Close"], length=14)["ADX_14"]
+    except Exception as e:
+        logger.error(f"Error calculating ADX: {str(e)}")
         df["ADX"] = np.nan
     
     return df
 
 
-def check_candle_patterns(df):
-    """Check for bullish candlestick patterns"""
+def check_candle_patterns(df: pd.DataFrame) -> List[str]:
+    """
+    Check for bullish candlestick patterns with fallback to manual calculation
+    
+    Args:
+        df: DataFrame with OHLCV data
+    
+    Returns:
+        List[str]: List of detected candlestick patterns
+    """
+    patterns = []
+    
+    try:
+        # Ensure data types
+        ohlc = {col: df[col].astype(float) for col in ["Open", "High", "Low", "Close"]}
+        
+        if TALIB_AVAILABLE:
+            try:
+                # TALib pattern detection
+                eng = talib.CDLENGULFING(ohlc["Open"], ohlc["High"],
+                                       ohlc["Low"], ohlc["Close"])
+                morning = talib.CDLMORNINGSTAR(ohlc["Open"], ohlc["High"],
+                                             ohlc["Low"], ohlc["Close"])
+                
+                last_eng = int(eng[-1]) if len(eng) else 0
+                last_morning = int(morning[-1]) if len(morning) else 0
+                
+                if last_eng > 0:
+                    patterns.append("🟢 Bullish Engulfing")
+                if last_morning > 0:
+                    patterns.append("🟢 Morning Star")
+                    
+            except Exception as e:
+                logger.warning(f"TALib pattern detection failed: {e}")
+                # Fall back to manual pattern detection
+                patterns.extend(manual_pattern_detection(df))
+        else:
+            # Manual pattern detection when TALib is not available
+            patterns.extend(manual_pattern_detection(df))
+            
+    except Exception as e:
+        logger.error(f"Error in candlestick pattern detection: {str(e)}", exc_info=True)
+    
+    return patterns
+
+def manual_pattern_detection(df: pd.DataFrame) -> List[str]:
+    """
+    Manual implementation of candlestick pattern detection
+    
+    Args:
+        df: DataFrame with OHLCV data
+    
+    Returns:
+        List[str]: List of detected patterns
+    """
     patterns = []
     try:
-        eng = talib.CDLENGULFING(df["Open"].astype(float), df["High"].astype(float),
-                                 df["Low"].astype(float), df["Close"].astype(float))
-        morning = talib.CDLMORNINGSTAR(df["Open"].astype(float), df["High"].astype(float),
-                                       df["Low"].astype(float), df["Close"].astype(float))
-        last_eng = int(eng[-1]) if len(eng) else 0
-        last_morning = int(morning[-1]) if len(morning) else 0
-        if last_eng > 0:
-            patterns.append("🟢 Bullish Engulfing")
-        if last_morning > 0:
-            patterns.append("🟢 Morning Star")
-    except Exception:
-        pass
+        # Get last 3 candles
+        last3 = df.tail(3)
+        
+        # Bullish Engulfing Detection
+        if len(last3) >= 2:
+            prev_candle = last3.iloc[-2]
+            curr_candle = last3.iloc[-1]
+            
+            prev_bearish = prev_candle["Close"] < prev_candle["Open"]
+            curr_bullish = curr_candle["Close"] > curr_candle["Open"]
+            engulfing = (curr_candle["Open"] <= prev_candle["Close"] and 
+                        curr_candle["Close"] >= prev_candle["Open"])
+            
+            if prev_bearish and curr_bullish and engulfing:
+                patterns.append("🟢 Bullish Engulfing")
+        
+        # Add more manual pattern detection logic here
+        
+    except Exception as e:
+        logger.error(f"Error in manual pattern detection: {str(e)}")
+    
     return patterns
 
 

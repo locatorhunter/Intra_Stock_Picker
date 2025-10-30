@@ -42,7 +42,8 @@ IST = pytz.timezone("Asia/Kolkata")
 if 'notify_desktop' not in st.session_state:
     st.session_state.notify_desktop = True
 if 'notify_telegram' not in st.session_state:
-    st.session_state.notify_telegram = True
+    # Default to False to avoid accidental Telegram messages until user configures
+    st.session_state.notify_telegram = False
 if 'BOT_TOKEN' not in st.session_state:
     st.session_state.BOT_TOKEN = ""
 if 'CHAT_ID' not in st.session_state:
@@ -94,7 +95,55 @@ if st.session_state.notified_date != today_iso:
     st.session_state.notified_date = today_iso
 
 # Render sidebar and get settings
-settings = render_sidebar()
+try:
+    settings = render_sidebar()
+except Exception as e:
+    # Sidebar failed — fall back to conservative defaults and show message
+    st.error(f"Sidebar load failed, using defaults: {e}")
+    settings = {
+        'auto_refresh_sec': 60,
+        'max_symbols': 80,
+        'interval': '5m',
+        'use_volume': True,
+        'use_breakout': True,
+        'use_ema_rsi': True,
+        'use_rs': True,
+        'vol_zscore_threshold': 1.2,
+        'breakout_margin_pct': 0.2,
+        'momentum_lookback': 3,
+        'rs_lookback': 3,
+        'atr_mult': 0.9,
+        'atr_period': 7,
+        'signal_score_threshold': 10,
+        'show_technical_predictions': True,
+        'custom_name': 'Default Scan',
+        'scan_mode': st.session_state.get('scan_mode', 'Early Detection 🐇')
+    }
+
+# Validate settings keys and provide defaults for any missing
+def _get_setting(key, default):
+    try:
+        return settings.get(key, default)
+    except Exception:
+        return default
+
+settings['auto_refresh_sec'] = int(_get_setting('auto_refresh_sec', 60))
+settings['max_symbols'] = int(_get_setting('max_symbols', 80))
+settings['interval'] = _get_setting('interval', '5m')
+settings['use_volume'] = bool(_get_setting('use_volume', True))
+settings['use_breakout'] = bool(_get_setting('use_breakout', True))
+settings['use_ema_rsi'] = bool(_get_setting('use_ema_rsi', True))
+settings['use_rs'] = bool(_get_setting('use_rs', True))
+settings['vol_zscore_threshold'] = float(_get_setting('vol_zscore_threshold', 1.2))
+settings['breakout_margin_pct'] = float(_get_setting('breakout_margin_pct', 0.2))
+settings['momentum_lookback'] = int(_get_setting('momentum_lookback', 3))
+settings['rs_lookback'] = int(_get_setting('rs_lookback', 3))
+settings['atr_mult'] = float(_get_setting('atr_mult', 0.9))
+settings['atr_period'] = int(_get_setting('atr_period', 7))
+settings['signal_score_threshold'] = int(_get_setting('signal_score_threshold', 10))
+settings['show_technical_predictions'] = bool(_get_setting('show_technical_predictions', True))
+settings['custom_name'] = _get_setting('custom_name', 'Default Scan')
+settings['scan_mode'] = _get_setting('scan_mode', st.session_state.get('scan_mode', 'Early Detection 🐇'))
 
 # Auto-refresh setup
 if 'prev_refresh_count' not in st.session_state:
@@ -127,7 +176,6 @@ tickers = [f"{s}.NS" for s in fo_symbols]
 
 progress = st.progress(0)
 status_text = st.empty()
-
 df_batch = get_batch_price_data(tickers, settings['interval'])
 nifty_df = get_nifty_daily()
 
@@ -137,58 +185,81 @@ shortlisted_stocks = []
 # Choose scanner based on mode
 scan_function = scan_stock_early if settings['scan_mode'] == "Early Detection 🐇" else scan_stock_original
 
-# Scan all symbols
-for i, sym in enumerate(fo_symbols):
-    status_text.text(f"Scanning {sym} ({i+1}/{len(fo_symbols)})")
-    progress.progress((i + 1) / len(fo_symbols))
-    
-    df_sym = extract_symbol_df(df_batch, sym)
-    
-    if df_sym is None or df_sym.empty or len(df_sym) < 25:
-        candidates.append({
-            "Symbol": sym,
-            "Score": 0,
-            "Last Close": "N/A",
-            "Entry": "N/A",
-            "Stop Loss": "N/A",
-            "Target": "N/A",
-            "Reasons": "⚠️ No data available"
-        })
-        continue
-    
-    score, reasons, entry, stop, target, signal = scan_function(
-        sym, df_sym, 
-        nifty_df=nifty_df,
-        use_volume=settings['use_volume'],
-        use_breakout=settings['use_breakout'],
-        use_ema_rsi=settings['use_ema_rsi'],
-        use_rs=settings['use_rs'],
-        vol_zscore_threshold=settings['vol_zscore_threshold'],
-        breakout_margin_pct=settings['breakout_margin_pct'],
-        momentum_lookback=settings['momentum_lookback'],
-        rs_lookback=settings['rs_lookback'],
-        atr_mult=settings['atr_mult'],
-        atr_period=settings['atr_period']
-    )
-    
-    last_close = float(df_sym["Close"].iloc[-1])
-    
-    candidates.append({
-        "Symbol": sym,
-        "Score": score,
-        "Last Close": last_close,
-        "Entry": entry,
-        "Stop Loss": stop,
-        "Target": target,
-        "Reasons": reasons
-    })
-    
-    if score >= settings['signal_score_threshold']:
-        shortlisted_stocks.append(sym)
-        
-        if sym not in st.session_state.notified_today:
-            notify_stock(sym, last_close, entry, stop, target, score, reasons)
-            st.session_state.notified_today.add(sym)
+# Scan all symbols with robust error handling so a single error doesn't crash the app
+try:
+    for i, sym in enumerate(fo_symbols):
+        try:
+            status_text.text(f"Scanning {sym} ({i+1}/{len(fo_symbols)})")
+            progress.progress((i + 1) / len(fo_symbols))
+
+            df_sym = extract_symbol_df(df_batch, sym)
+
+            if df_sym is None or df_sym.empty or len(df_sym) < 25:
+                candidates.append({
+                    "Symbol": sym,
+                    "Score": 0,
+                    "Last Close": "N/A",
+                    "Entry": "N/A",
+                    "Stop Loss": "N/A",
+                    "Target": "N/A",
+                    "Reasons": "⚠️ No data available"
+                })
+                continue
+
+            score, reasons, entry, stop, target, signal = scan_function(
+                sym, df_sym,
+                nifty_df=nifty_df,
+                use_volume=settings['use_volume'],
+                use_breakout=settings['use_breakout'],
+                use_ema_rsi=settings['use_ema_rsi'],
+                use_rs=settings['use_rs'],
+                vol_zscore_threshold=settings['vol_zscore_threshold'],
+                breakout_margin_pct=settings['breakout_margin_pct'],
+                momentum_lookback=settings['momentum_lookback'],
+                rs_lookback=settings['rs_lookback'],
+                atr_mult=settings['atr_mult'],
+                atr_period=settings['atr_period']
+            )
+
+            last_close = float(df_sym["Close"].iloc[-1])
+
+            candidates.append({
+                "Symbol": sym,
+                "Score": score,
+                "Last Close": last_close,
+                "Entry": entry,
+                "Stop Loss": stop,
+                "Target": target,
+                "Reasons": reasons
+            })
+
+            if score >= settings['signal_score_threshold']:
+                shortlisted_stocks.append(sym)
+
+                if sym not in st.session_state.notified_today:
+                    try:
+                        notify_stock(sym, last_close, entry, stop, target, score, reasons)
+                    except Exception as e:
+                        # Notification failures shouldn't break scanning
+                        st.error(f"Failed to send notification for {sym}: {e}")
+                    st.session_state.notified_today.add(sym)
+        except Exception as e_sym:
+            # Per-symbol error handling
+            logger_msg = f"Error scanning {sym}: {e_sym}"
+            print(logger_msg)
+            candidates.append({
+                "Symbol": sym,
+                "Score": 0,
+                "Last Close": "N/A",
+                "Entry": "N/A",
+                "Stop Loss": "N/A",
+                "Target": "N/A",
+                "Reasons": f"⚠️ Error: {e_sym}"
+            })
+            continue
+finally:
+    progress.empty()
+    status_text.text("✅ Scan complete!")
 
 progress.empty()
 status_text.text("✅ Scan complete!")
