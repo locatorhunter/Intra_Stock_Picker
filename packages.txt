@@ -1,5 +1,2 @@
 build-essential
 wget
-libta-lib0
-libta-lib0-dev
-ta-lib
