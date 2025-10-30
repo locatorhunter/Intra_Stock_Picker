@@ -10,10 +10,19 @@ import requests
 from plyer import notification
 from datetime import datetime, date
 import pytz
-import talib
 import json
 import os
 import paper
+
+# Make talib optional - use pandas-ta instead on cloud
+try:
+    import talib
+    TALIB_AVAILABLE = True
+    print("[✓] TA-Lib loaded successfully")
+except ImportError:
+    TALIB_AVAILABLE = False
+    print("[INFO] TA-Lib not available - using pandas-ta for indicators")
+
 
 # --- GLOBAL DEFINITIONS ---
 IST = pytz.timezone("Asia/Kolkata")
@@ -512,50 +521,46 @@ def extract_symbol_df(df_batch_local: pd.DataFrame, sym: str) -> pd.DataFrame:
 # Technical Analysis Functions
 # -------------------------
 
-def compute_indicators(df, atr_period=7):
-    """Compute technical indicators on price data"""
-    df = df.rename(columns=str.title).copy()
-    for c in ["Open", "High", "Low", "Close", "Volume"]:
-        if c not in df.columns:
-            return df
+def compute_indicators(df, atr_period=14):
+    """Compute technical indicators using pandas-ta"""
     
-    df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
+    if df.empty or len(df) < 20:
+        return df
     
     try:
-        highs = df["High"].astype(float).values
-        lows = df["Low"].astype(float).values
-        closes = df["Close"].astype(float).values
-        df["ATR"] = talib.ATR(highs, lows, closes, timeperiod=atr_period)
-    except Exception:
-        df["ATR"] = np.nan
+        import pandas_ta as ta
+        
+        # RSI
+        df.ta.rsi(length=7, append=True)   # Creates RSI_7 column
+        df.ta.rsi(length=14, append=True)  # Creates RSI_14 column
+        
+        # MACD
+        df.ta.macd(fast=12, slow=26, signal=9, append=True)  # Creates MACD columns
+        
+        # ADX
+        df.ta.adx(length=14, append=True)  # Creates ADX columns
+        
+        # ATR
+        df.ta.atr(length=atr_period, append=True)  # Creates ATR column
+        
+        # EMAs
+        df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
+        df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
+        df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
+        
+        # SMAs
+        df['SMA20'] = df['Close'].rolling(window=20).mean()
+        df['SMA50'] = df['Close'].rolling(window=50).mean()
+        
+        # Volume
+        df['Volume_SMA'] = df['Volume'].rolling(window=20).mean()
+        
+        return df
     
-    try:
-        df["RSI7"] = talib.RSI(df["Close"].astype(float).values, timeperiod=7)
-        df["RSI10"] = talib.RSI(df["Close"].astype(float).values, timeperiod=10)
-    except Exception:
-        df["RSI7"] = np.nan
-        df["RSI10"] = np.nan
-    
-    df["AvgVol20"] = df["Volume"].rolling(20).mean()
-    df["VolStd20"] = df["Volume"].rolling(20).std()
-    df["Vol_Trend"] = df["Volume"].rolling(5).mean() / df["Volume"].rolling(20).mean()
-    
-    try:
-        macd, signal, hist = talib.MACD(df["Close"].astype(float).values, fastperiod=12, slowperiod=26, signalperiod=9)
-        df["MACD"] = macd
-        df["MACD_signal"] = signal
-        df["MACD_hist"] = hist
-    except Exception:
-        df["MACD"] = np.nan
-        df["MACD_signal"] = np.nan
-        df["MACD_hist"] = np.nan
-    
-    try:
-        df["ADX"] = talib.ADX(df["High"].astype(float).values, df["Low"].astype(float).values, df["Close"].astype(float).values, timeperiod=14)
-    except Exception:
-        df["ADX"] = np.nan
-    
-    return df
+    except Exception as e:
+        print(f"Error computing indicators: {e}")
+        return df
+
 
 
 def check_candle_patterns(df):
