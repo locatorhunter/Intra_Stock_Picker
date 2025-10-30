@@ -56,7 +56,7 @@ def render_ai_training_interface():
                     success, msg = train_ai_models()
                     if success:
                         st.success("✅ Models retrained!")
-                        st.rerun()
+                        safe_rerun()
                     else:
                         st.error(f"❌ {msg}")
 
@@ -65,7 +65,7 @@ def render_ai_training_interface():
                     if MODELS_DIR.exists():
                         shutil.rmtree(MODELS_DIR)
                     st.success("✅ Models deleted")
-                    st.rerun()
+                    safe_rerun()
                 except OSError as e:
                     st.error(f"❌ {e}")
         else:
@@ -75,7 +75,7 @@ def render_ai_training_interface():
                     if success:
                         st.success("✅ Training complete!")
                         st.balloons()
-                        st.rerun()
+                        safe_rerun()
                     else:
                         st.error(f"❌ {msg}")
 

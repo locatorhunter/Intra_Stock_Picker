@@ -309,7 +309,7 @@ def render_sidebar():
 
         if selected_preset_key != st.session_state.get('current_preset_name'):
             st.session_state['current_preset_name'] = selected_preset_key
-            st.experimental_rerun()
+            safe_rerun()
 
     # === MANAGE FILTERS ===
     with st.sidebar.expander("🗑️ Manage Filters:", expanded=False):
@@ -322,7 +322,7 @@ def render_sidebar():
                     if success:
                         st.success(f"Preset '{preset}' deleted successfully!")
                         st.session_state['current_preset_name'] = 'Default'
-                        st.experimental_rerun()
+                        safe_rerun()
                     else:
                         st.error(message)
 
@@ -428,7 +428,7 @@ def render_sidebar():
             if save_filters(custom_name, current_filters):
                 st.session_state['current_preset_name'] = custom_name
                 st.sidebar.success(f"Preset '{custom_name}' saved successfully!")
-                st.experimental_rerun()
+                safe_rerun()
 
     show_technical_predictions = st.sidebar.checkbox("Show Technical Predictions", value=True)
 

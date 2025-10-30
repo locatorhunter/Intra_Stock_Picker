@@ -36,18 +36,30 @@ def safe_rerun():
     Streamlit builds that don't expose `experimental_rerun`.
     """
     try:
-        # Preferred, if available
-        st.experimental_rerun()
-    except Exception:
-        # Toggle a session-state flag to trigger a rerun on interaction
-        key = "_rerun_trigger"
-        st.session_state[key] = not st.session_state.get(key, False)
-        # Stop execution now; Streamlit will re-run due to session state change
-        try:
-            st.stop()
-        except Exception:
-            # As a final fallback, do nothing (script will finish)
+        # Try the newer / preferred APIs first. Some Streamlit builds provide
+        # `experimental_rerun`, others expose `rerun`. Try both for maximum
+        # compatibility.
+        if hasattr(st, "experimental_rerun"):
+            st.experimental_rerun()
             return
+        if hasattr(st, "rerun"):
+            # Stable API in newer Streamlit versions
+            st.rerun()
+            return
+    except Exception:
+        # If direct rerun calls fail for any reason, fall back to a session
+        # state toggle which causes Streamlit to re-run on change.
+        pass
+
+    # Toggle a session-state flag to trigger a rerun on interaction
+    key = "_rerun_trigger"
+    st.session_state[key] = not st.session_state.get(key, False)
+    # Stop execution now; Streamlit will re-run due to session state change
+    try:
+        st.stop()
+    except Exception:
+        # As a final fallback, do nothing (script will finish)
+        return
 
 
 def atomic_save_df(df: pd.DataFrame, path: str):

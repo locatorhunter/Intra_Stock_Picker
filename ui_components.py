@@ -177,7 +177,8 @@ def render_watchlist(df_batch):
             if st.button("❌ Remove", key=f"remove_wl_{symbol}", use_container_width=True):
                 remove_from_watchlist(symbol)
                 st.success(f"Removed {symbol}")
-                st.rerun()
+                from paper import safe_rerun
+                safe_rerun()
 
 
 # ===== 4. RENDER TECHNICAL PREDICTIONS (WITH AI) =====
@@ -859,7 +860,8 @@ Score: {score}/{settings['signal_score_threshold']}
                     "target": target_to_save, "status": "Active"
                 }
                 st.success(f"✅ Added {manual_symbol} to watchlist!")
-                st.rerun()
+                from paper import safe_rerun
+                safe_rerun()
             
             # Handle TradingView
             if chart_clicked:
@@ -976,14 +978,16 @@ def render_paper_trading_tab():
                     st.balloons()
                     # Clear pending trade
                     st.session_state['pending_trade'] = None
-                    st.rerun()
+                    from paper import safe_rerun
+                    safe_rerun()
                 except Exception as e:
                     st.error(f"Trade execution failed: {e}")
         
         with col2:
             if st.button("❌ Cancel Trade", use_container_width=True):
                 st.session_state['pending_trade'] = None
-                st.rerun()
+                from paper import safe_rerun
+                safe_rerun()
         
         with col3:
             if st.button("🔄 Modify Levels", use_container_width=True):

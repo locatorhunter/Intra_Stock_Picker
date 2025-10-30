@@ -291,11 +291,17 @@ with tab_main:
     st.markdown("### Qualified Stocks")
     
     if not df_candidates.empty:
-        render_qualified_stocks(df_candidates, settings['signal_score_threshold'])
+        try:
+            render_qualified_stocks(df_candidates, settings['signal_score_threshold'])
+        except Exception as e:
+            st.error(f"Qualified stocks UI failed: {e}")
         
         # Render technical predictions if enabled
         if settings['show_technical_predictions'] and shortlisted_stocks:
-            render_technical_predictions(shortlisted_stocks, df_candidates, df_batch)
+            try:
+                render_technical_predictions(shortlisted_stocks, df_candidates, df_batch)
+            except Exception as e:
+                st.error(f"Technical predictions UI failed: {e}")
     else:
         st.info("⚠️ No scan results available.")
 
@@ -308,21 +314,30 @@ with tab_paper:
         st.info("🎯 You have a pending trade from the scanner! Scroll down to execute it.")
     
     # Call the complete paper trading interface
-    paper.paper_trading_interface()
+    try:
+        paper.paper_trading_interface()
+    except Exception as e:
+        st.error(f"Paper trading UI failed: {e}")
 
 # -----------------------------------------------------------------------------
 # TAB 3: MANUAL ANALYSIS
 # -----------------------------------------------------------------------------
 with tab_manual:
     st.markdown("### 🔍 Manual Stock Analysis")
-    render_manual_search(df_batch, settings)
+    try:
+        render_manual_search(df_batch, settings)
+    except Exception as e:
+        st.error(f"Manual search UI failed: {e}")
 
 # -----------------------------------------------------------------------------
 # TAB 4: WATCHLIST
 # -----------------------------------------------------------------------------
 with tab_watchlist:
     st.markdown("### 📋 Active Watchlist")
-    render_watchlist(df_batch)
+    try:
+        render_watchlist(df_batch)
+    except Exception as e:
+        st.error(f"Watchlist UI failed: {e}")
 # -----------------------------------------------------------------------------
 # TAB 5: AI PREDICTIONS
 # -----------------------------------------------------------------------------
@@ -333,16 +348,25 @@ with tab_ai:
         st.info(f"📊 Analyzing {len(shortlisted_stocks)} qualified stocks from scanner")
         
         # Import AI module
-        from ai_dashboard import render_ai_dashboard
-        render_ai_dashboard(shortlisted_stocks, df_candidates, df_batch)
+        try:
+            from ai_dashboard import render_ai_dashboard
+            render_ai_dashboard(shortlisted_stocks, df_candidates, df_batch)
+        except Exception as e:
+            st.error(f"AI dashboard failed: {e}")
     else:
         st.warning("⚠️ No qualified stocks from scanner. Run a scan first!")
         
         # Still show training interface
-        from ai_dashboard import render_ai_training_interface
-        render_ai_training_interface()
+        try:
+            from ai_dashboard import render_ai_training_interface
+            render_ai_training_interface()
+        except Exception as e:
+            st.error(f"AI training interface failed: {e}")
 # -----------------------------------------------------------------------------
 # TAB 6: TRADE GUIDE
 # -----------------------------------------------------------------------------
 with tab_guide:
-    trade_guide.render_trade_guide()
+    try:
+        trade_guide.render_trade_guide()
+    except Exception as e:
+        st.error(f"Trade guide UI failed: {e}")
