@@ -1,8 +1,12 @@
 """
 sidebar.py - Sidebar UI components
 """
-
 import streamlit as st
+import os
+import json  # ← ADD THIS
+from ai_predictor import StockPredictor
+import pandas as pd
+import numpy as np
 from datetime import datetime
 import pytz
 import paper
@@ -12,6 +16,7 @@ from functions import (
 )
 
 IST = pytz.timezone("Asia/Kolkata")
+
 
 def display_live_clock():
     now = datetime.now(IST).strftime("%I:%M:%S %p %Z")
@@ -25,6 +30,222 @@ def display_live_clock():
             """, 
             unsafe_allow_html=True
         )
+
+
+def train_ai_models():
+    """
+    Train AI models using the SAME TIMEFRAME as scanner settings
+    Returns: (success: bool, message: str)
+    """
+    try:
+        from functions import get_fo_symbols, get_batch_price_data, extract_symbol_df, compute_indicators
+        import yfinance as yf
+        
+        predictor = StockPredictor()
+        
+        # Get current scanner settings
+        scan_interval = st.session_state.get('scan_interval', '5m')  # Use current scanner interval
+        
+        # Map intervals to training parameters
+        interval_config = {
+            '5m': {'period': '5d', 'prediction_candles': 12, 'label_threshold': 0.015},    # 5min: predict next hour (12 candles), 1.5% move
+            '15m': {'period': '10d', 'prediction_candles': 8, 'label_threshold': 0.02},   # 15min: predict next 2 hours (8 candles), 2% move
+            '30m': {'period': '20d', 'prediction_candles': 6, 'label_threshold': 0.025},  # 30min: predict next 3 hours (6 candles), 2.5% move
+            '1h': {'period': '1mo', 'prediction_candles': 5, 'label_threshold': 0.03},    # 1hour: predict next 5 hours, 3% move
+            '1d': {'period': '6mo', 'prediction_candles': 5, 'label_threshold': 0.02}     # Daily: predict next 5 days, 2% move
+        }
+        
+        config = interval_config.get(scan_interval, interval_config['5m'])
+        
+        st.info(f"🔧 Training AI for **{scan_interval}** timeframe...")
+        
+        symbols = get_fo_symbols(30)
+        training_data = []
+        
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        status_text.info(f"📊 Phase 1/2: Collecting {scan_interval} data...")
+        
+        for i, symbol in enumerate(symbols):
+            status_text.text(f"📥 Downloading {symbol} {scan_interval} data... ({i+1}/{len(symbols)})")
+            progress_bar.progress((i + 1) / (len(symbols) * 2))
+            
+            try:
+                # Download data for the CURRENT SCANNER INTERVAL
+                ticker = yf.Ticker(f"{symbol}.NS")
+                df = ticker.history(period=config['period'], interval=scan_interval)
+                
+                if df is None or len(df) < 100:
+                    continue
+                
+                # Compute indicators
+                df = df.rename(columns=str.title)
+                df = compute_indicators(df, atr_period=14)
+                
+                if df.empty or len(df) < 100:
+                    continue
+                
+                # Create training samples
+                train_end = int(len(df) * 0.8)
+                
+                for j in range(60, train_end - config['prediction_candles']):
+                    try:
+                        # Extract features from candle j
+                        window_df = df.iloc[:j+1].copy()
+                        features = predictor.prepare_features(window_df)
+                        
+                        if features is None:
+                            continue
+                        
+                        # Label: Did price move up by threshold% in next N candles?
+                        current_price = df['Close'].iloc[j]
+                        future_prices = df['Close'].iloc[j+1:j+1+config['prediction_candles']]
+                        max_future_price = future_prices.max()
+                        
+                        # Positive label if price went up by threshold within prediction window
+                        label = 1 if max_future_price > current_price * (1 + config['label_threshold']) else 0
+                        
+                        training_data.append((features, label))
+                    
+                    except Exception as e:
+                        continue
+            
+            except Exception as e:
+                print(f"Error processing {symbol}: {e}")
+                continue
+        
+        status_text.text(f"✅ Collected {len(training_data)} training samples ({scan_interval} data)")
+        progress_bar.progress(0.5)
+        
+        if len(training_data) < 100:
+            progress_bar.empty()
+            status_text.empty()
+            return False, f"Insufficient training data (got {len(training_data)} samples, need 100+)"
+        
+        # Phase 2: Train models
+        status_text.info(f"🤖 Phase 2/2: Training AI for {scan_interval} trading...")
+        progress_bar.progress(0.75)
+        
+        success, msg = predictor.train_models(training_data)
+        
+        # Save training config
+        if success:
+            import json
+            import os
+            if not os.path.exists("ai_models"):
+                os.makedirs("ai_models")
+            
+            with open("ai_models/training_config.json", 'w') as f:
+                json.dump({
+                    'interval': scan_interval,
+                    'prediction_candles': config['prediction_candles'],
+                    'threshold': config['label_threshold'],
+                    'trained_date': datetime.now(IST).isoformat()
+                }, f)
+        
+        progress_bar.progress(1.0)
+        progress_bar.empty()
+        status_text.empty()
+        
+        return success, f"{msg} (Trained for {scan_interval} timeframe)"
+    
+    except Exception as e:
+        return False, f"Training error: {str(e)}"
+
+
+
+def render_ai_training_section():
+    """AI Model Training Interface"""
+    
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 🤖 AI Model Training")
+    
+    # Check training config
+    models_exist = os.path.exists("ai_models/rf_model.pkl")
+    
+    if models_exist:
+        st.sidebar.success("✅ Models Trained!")
+        
+        # Show training config
+        try:
+            if os.path.exists("ai_models/training_config.json"):
+                with open("ai_models/training_config.json", 'r') as f:
+                    config = json.load(f)
+                
+                trained_interval = config.get('interval', 'Unknown')
+                current_interval = st.session_state.get('scan_interval', '5m')
+                
+                # Warning if mismatch
+                if trained_interval != current_interval:
+                    st.sidebar.warning(f"⚠️ Trained for **{trained_interval}** but scanning with **{current_interval}**")
+                    st.sidebar.info("💡 Retrain for current timeframe for best results")
+                else:
+                    st.sidebar.info(f"📊 Trained for: **{trained_interval}** timeframe ✅")
+        except:
+            pass
+        
+        with st.sidebar.expander("⚙️ Model Management", expanded=False):
+            st.markdown("""
+<div style="background:rgba(59,130,246,0.1);padding:10px;border-radius:6px;font-size:11px;margin-bottom:10px;">
+<strong>ℹ️ When to retrain:</strong><br>
+• Weekly (adapt to market changes)<br>
+• After major market events<br>
+• If accuracy drops below 55%
+</div>
+""", unsafe_allow_html=True)
+            
+            col_retrain, col_clear = st.columns(2)
+            
+            with col_retrain:
+                if st.button("🔄 Retrain", use_container_width=True, help="Retrain with latest data", key="sidebar_retrain"):
+                    with st.spinner("Training..."):
+                        success, msg = train_ai_models()
+                        if success:
+                            st.success("✅ Retrained!")
+                            st.balloons()
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {msg}")
+            
+            with col_clear:
+                if st.button("🗑️ Clear", use_container_width=True, help="Delete models", key="sidebar_clear"):
+                    try:
+                        import shutil
+                        if os.path.exists("ai_models"):
+                            shutil.rmtree("ai_models")
+                        st.success("✅ Cleared")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ {e}")
+    
+    else:
+        st.sidebar.warning("⚠️ Not Trained")
+
+        current_interval = st.session_state.get('scan_interval', '5m')
+        
+        st.sidebar.markdown(f"""
+<div style="background:rgba(245,158,11,0.1);padding:12px;border-radius:8px;margin:10px 0;font-size:11px;">
+<strong>📋 Will train for:</strong><br>
+• Timeframe: <strong>{current_interval}</strong><br>
+• Same as your scanner settings<br>
+• Prediction horizon: Few candles ahead<br><br>
+<strong>⏱️ Time:</strong> 3-5 minutes
+</div>
+""", unsafe_allow_html=True)
+        
+        if st.sidebar.button("🚀 Train AI Models", use_container_width=True, type="primary", key="sidebar_train"):
+            success, msg = train_ai_models()
+            
+            if success:
+                st.success("✅ Training complete!")
+                st.balloons()
+                st.info("🔄 Refresh or go to AI Predictions tab!")
+                st.rerun()
+            else:
+                st.error(f"❌ Training failed: {msg}")
+                st.info("💡 Try again or check your internet connection")
+
 
 def render_sidebar():
     """Render complete sidebar with all controls"""
@@ -211,6 +432,11 @@ def render_sidebar():
     
     show_technical_predictions = st.sidebar.checkbox("Show Technical Predictions", True)
     
+    # Store interval in session state
+    st.session_state['scan_interval'] = interval
+    # AI Training Section
+    render_ai_training_section()
+    
     st.sidebar.markdown("---")
     st.sidebar.markdown("Happy Trading!!! -✏️ Vijay S")
     
@@ -234,5 +460,6 @@ def render_sidebar():
         'rs_lookback': rs_lookback,
         'signal_score_threshold': signal_score_threshold,
         'show_technical_predictions': show_technical_predictions,
-        'custom_name': custom_name
+        'custom_name': custom_name,
+        'interval': interval
     }

@@ -62,6 +62,28 @@ if 'last_refresh_time' not in st.session_state:
 if 'pending_trade' not in st.session_state:
     st.session_state['pending_trade'] = None
 
+# ===== ADD THIS SECTION FOR AI =====
+# Initialize AI components
+if 'predictor' not in st.session_state:
+    try:
+        from ai_predictor import StockPredictor
+        st.session_state.predictor = StockPredictor()
+        print("[✓] AI Predictor initialized")
+    except Exception as e:
+        st.session_state.predictor = None
+        print(f"[✗] AI Predictor failed to initialize: {e}")
+
+if 'tracker' not in st.session_state:
+    try:
+        from ai_predictor import PredictionTracker
+        st.session_state.tracker = PredictionTracker()
+        print("[✓] AI Tracker initialized")
+    except Exception as e:
+        st.session_state.tracker = None
+        print(f"[✗] AI Tracker failed to initialize: {e}")
+
+# ===== END AI INITIALIZATION =====
+
 # Initialize paper trading
 paper.init_paper_trades()
 
@@ -183,19 +205,19 @@ else:
 # =============================================================================
 # TAB SECTION
 # =============================================================================
-tab_main, tab_paper, tab_manual, tab_watchlist, tab_guide = st.tabs([
+tab_main, tab_paper, tab_manual, tab_watchlist, tab_ai, tab_guide = st.tabs([
     "📊 Auto Scanner", 
     "💹 Paper Trading", 
     "🔍 Manual Analysis", 
     "📋 Watchlist",
+    "🤖 AI Predictions",
     "📚 Trade Guide" 
 ])
-
 # -----------------------------------------------------------------------------
 # TAB 1: AUTO SCANNER
 # -----------------------------------------------------------------------------
 with tab_main:
-    st.markdown("### 📈 Qualified Stocks")
+    st.markdown("### Qualified Stocks")
     
     if not df_candidates.empty:
         render_qualified_stocks(df_candidates, settings['signal_score_threshold'])
@@ -230,9 +252,26 @@ with tab_manual:
 with tab_watchlist:
     st.markdown("### 📋 Active Watchlist")
     render_watchlist(df_batch)
-
 # -----------------------------------------------------------------------------
-# TAB 5: TRADE GUIDE
+# TAB 5: AI PREDICTIONS
+# -----------------------------------------------------------------------------
+with tab_ai:
+    st.markdown("### 🤖 AI-Powered Stock Predictions")
+    
+    if shortlisted_stocks:
+        st.info(f"📊 Analyzing {len(shortlisted_stocks)} qualified stocks from scanner")
+        
+        # Import AI module
+        from ai_dashboard import render_ai_dashboard
+        render_ai_dashboard(shortlisted_stocks, df_candidates, df_batch)
+    else:
+        st.warning("⚠️ No qualified stocks from scanner. Run a scan first!")
+        
+        # Still show training interface
+        from ai_dashboard import render_ai_training_interface
+        render_ai_training_interface()
+# -----------------------------------------------------------------------------
+# TAB 6: TRADE GUIDE
 # -----------------------------------------------------------------------------
 with tab_guide:
     trade_guide.render_trade_guide()

@@ -96,6 +96,11 @@ def execute_trade(symbol, action, quantity, price, sl=0.0, target=0.0):
     
     st.session_state.trades.append(trade)
     save_trades()
+    
+    # ========== SEND NOTIFICATION ==========
+    from functions import notify_trade_execution
+    notify_trade_execution(symbol, action, quantity, price, trade_type="paper")
+    
     return True
 
 # ---------------------------

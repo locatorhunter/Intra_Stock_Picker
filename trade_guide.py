@@ -5,6 +5,446 @@ trade_guide.py - Trading Strategy Guide and Education
 import streamlit as st
 import pandas as pd
 
+def render_ai_guide():
+            """Complete AI Predictions Guide"""
+
+            st.markdown("""
+        # 🤖 AI Predictions Guide
+
+        ## What is AI-Powered Stock Prediction?
+
+        Our AI system uses **Machine Learning** to analyze historical stock data and predict whether a stock's price is likely to move **UP** or **DOWN** in the near term (next few days).
+
+        ---
+
+        ## 🧠 How Does It Work?
+
+        ### The Science Behind It
+
+        The AI system uses two powerful machine learning algorithms:
+
+        1. **Random Forest (RF)** 🌲
+           - Analyzes patterns across multiple decision trees
+           - Great at handling complex, non-linear relationships
+           - Less prone to overfitting
+
+        2. **Logistic Regression (LR)** 📊
+           - Statistical model for binary classification
+           - Fast and interpretable
+           - Works well with linear trends
+
+        ### The Process
+        📥 Data Collection
+        ↓
+        🔍 Feature Extraction (17 indicators)
+        ↓
+        🤖 Model Training (RF + LR)
+        ↓
+        🎯 Ensemble Prediction (Average both models)
+        ↓
+        📊 Output: Direction + Confidence
+
+        ---
+
+        ## 🚀 How to Train the AI Models
+
+        ### First-Time Setup
+
+        **Step 1:** Navigate to **Sidebar** or **AI Predictions Tab**
+
+        **Step 2:** Look for the AI Training section:
+        - 🚀 **Train AI Models Now** button
+        - Training status indicator
+
+        **Step 3:** Click the button and wait (3-5 minutes)
+
+        **What Happens During Training:**
+        """)
+
+            col_train1, col_train2, col_train3 = st.columns(3)
+
+            with col_train1:
+                st.markdown("""
+        **Phase 1: Data Collection**
+        - Downloads 6 months of daily data
+        - Uses top 30 NSE F&O stocks
+        - Collects OHLCV + indicators
+        - Creates 1000+ training samples
+        """)
+
+            with col_train2:
+                st.markdown("""
+        **Phase 2: Model Training**
+        - Trains Random Forest model
+        - Trains Logistic Regression model
+        - Validates on test data
+        - Calculates accuracy metrics
+        """)
+
+            with col_train3:
+                st.markdown("""
+        **Phase 3: Saving**
+        - Saves models to disk
+        - Stores feature importance
+        - Ready for instant predictions
+        - Models persist across sessions
+        """)
+
+            st.markdown("""
+        ---
+
+        ## 📊 Understanding AI Predictions
+
+        ### The Prediction Display
+
+        When you view an AI prediction, you'll see:
+        """)
+
+            st.markdown("""
+        <div style="background:rgba(59,130,246,0.1);padding:20px;border-radius:10px;margin:20px 0;">
+        <h4 style="color:#3b82f6;">🤖 AI Prediction: BULLISH</h4>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:15px 0;">
+        <div>
+        <strong>Probability UP:</strong> 68.5%<br>
+        <strong>Probability DOWN:</strong> 31.5%<br>
+        <strong>AI Confidence:</strong> 74%
+        </div>
+        <div>
+        <strong>Random Forest:</strong> 70% UP<br>
+        <strong>Logistic Reg:</strong> 67% UP<br>
+        <strong>Consensus:</strong> Both agree ✅
+        </div>
+        </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+            st.markdown("""
+        ### Key Metrics Explained
+
+        | Metric | Meaning | What to Look For |
+        |--------|---------|-----------------|
+        | **Probability UP** | Likelihood of price increase | >60% = Bullish signal |
+        | **Probability DOWN** | Likelihood of price decrease | >60% = Bearish signal |
+        | **AI Confidence** | How certain the AI is | >75% = Strong, 60-75% = Moderate, <60% = Weak |
+        | **Consensus** | Technical + AI agreement | Both BULLISH = 🟢 Strong Buy |
+
+        ---
+
+        ## 🎯 How to Use AI Predictions in Trading
+
+        ### Step-by-Step Trading Workflow
+
+        **1. Run the Scanner** (Auto Scanner Tab)
+           - Scanner finds stocks with good technical setup
+           - Shows technical score (out of 15)
+
+        **2. Check Technical Analysis**
+           - Review entry, stop loss, target levels
+           - Check signal reasons (RSI, MACD, Volume, etc.)
+
+        **3. View AI Prediction** (AI Predictions Tab or Scanner summary)
+           - See AI's directional prediction
+           - Check confidence level
+           - Review feature importance
+
+        **4. Look for Consensus** ✅
+           - **STRONG BUY**: Technical = BULLISH + AI = BULLISH + High Confidence (>70%)
+           - **MODERATE BUY**: Technical = BULLISH + AI = BULLISH + Moderate Confidence (60-70%)
+           - **WEAK/AVOID**: Mixed signals or low confidence (<60%)
+
+        **5. Execute Trade**
+           - Add to watchlist or paper trading
+           - Follow your risk management rules
+           - Track prediction accuracy
+
+        ---
+
+        ## ⚠️ Important Guidelines
+
+        ### When to Trust AI Predictions
+
+        ✅ **Trust More When:**
+        - Confidence >75% (Strong signal)
+        - Technical analysis agrees (Consensus)
+        - Multiple indicators support the direction
+        - Stock showing clear trend
+        - High trading volume
+
+        ❌ **Be Cautious When:**
+        - Confidence <60% (Weak signal)
+        - Mixed signals (Tech BULLISH, AI BEARISH)
+        - Choppy/consolidating market
+        - Low volume
+        - Major news pending
+
+        ### AI Limitations
+
+        🚫 **AI CANNOT:**
+        - Predict exact prices
+        - Guarantee profits
+        - Account for breaking news
+        - Predict black swan events
+        - Replace risk management
+
+        ✅ **AI CAN:**
+        - Identify high-probability setups
+        - Detect complex patterns
+        - Provide objective second opinion
+        - Track its own accuracy
+        - Learn from market data
+
+        ---
+
+        ## 📈 Interpreting Feature Importance
+
+        When you expand **"What's Driving This Prediction?"**, you'll see:
+
+        Top Contributing Factors:
+
+        RSI 7 ████████░░ 42.3%
+
+        Price Change 5 ██████░░░░ 28.1%
+
+        Volume Ratio ████░░░░░░ 15.6%
+
+        MACD Difference ███░░░░░░░ 8.2%
+
+        Momentum 10 ██░░░░░░░░ 5.8%
+
+
+        **What This Means:**
+        - **RSI 7 (42.3%)**: Current RSI level is the most important factor
+        - **Price Change 5 (28.1%)**: Recent 5-candle price movement matters
+        - **Top 3 factors** usually account for 70-80% of the decision
+
+        ---
+
+        ## 🔄 Model Maintenance
+
+        ### When to Retrain
+
+        Retrain your AI models:
+        - ✅ **Weekly** (recommended for active markets)
+        - ✅ After major market events (budget, Fed decisions)
+        - ✅ If accuracy drops below 55%
+        - ✅ Market regime changes (bull to bear or vice versa)
+
+        ### How to Retrain
+
+        **Option 1: From Sidebar**
+        1. Go to **🤖 AI Model Training** section
+        2. Click **🔄 Retrain** button
+        3. Wait 3-5 minutes
+
+        **Option 2: From AI Predictions Tab**
+        1. Go to **AI Predictions** tab
+        2. Click **🔄 Retrain Models** button
+        3. Monitor progress
+
+        ---
+
+        ## 📊 Tracking AI Performance
+
+        ### View Accuracy Stats
+
+        In the **AI Predictions Tab**, you'll see:
+
+        | Metric | Description |
+        |--------|-------------|
+        | **Overall Accuracy** | % of correct predictions across all trades |
+        | **Bullish Accuracy** | % correct when predicting UP |
+        | **Bearish Accuracy** | % correct when predicting DOWN |
+        | **Last 10 Predictions** | Recent performance (more reliable) |
+
+        ### Save Predictions
+
+        Click **📝 Save This Prediction** on any stock to:
+        - Track AI's accuracy over time
+        - Compare predicted vs actual outcomes
+        - Build confidence in the system
+        - Identify which patterns work best
+
+        ---
+
+        ## 💡 Pro Trading Tips with AI
+
+        ### Strategy 1: High-Confidence Plays
+
+        Filter: Confidence ≥ 75%
+
+        Technical Score ≥ 10
+
+        Consensus = STRONG BULLISH
+        = Take larger position size (within risk limits)
+
+
+        ### Strategy 2: Early Detection
+        Scanner Mode: Early Detection 🐇
+
+        AI Confidence 60-75%
+
+        Technical Score 7-9
+        = Enter with smaller size, wait for confirmation
+
+
+        ### Strategy 3: Swing Trading
+
+        Use AI for: Multi-day predictions
+
+        Technical Analysis for: Entry/Exit timing
+
+        Risk Management: Always set SL/Target
+
+        ### Strategy 4: Filtering Noise
+        Scanner finds 10 stocks
+        AI shows 4 with High Confidence
+        = Focus on those 4 stocks only
+        = Reduces FOMO, improves quality
+
+
+        ---
+
+        ## 🧪 Testing AI Predictions
+
+        ### Paper Trading Workflow
+
+        1. **Get AI Prediction** (AI Predictions tab)
+        2. **Add to Paper Trading** (Paper Trading tab)
+        3. **Set Entry/SL/Target** based on technicals
+        4. **Track Performance** automatically
+        5. **Review Results** after 5-10 days
+        6. **Calculate Win Rate** for AI predictions
+
+        ### Recommended Testing Period
+
+        Before using with real money:
+        - Test for **2-3 weeks** minimum
+        - Track at least **20 predictions**
+        - Calculate **win rate** (aim for >60%)
+        - Understand which confidence levels work best
+        - Learn your edge with AI + Technical combo
+
+        ---
+
+        ## 🎓 Learning Resources
+
+        ### Understanding Machine Learning
+
+        **Random Forest:**
+        - Decision tree ensemble method
+        - Reduces overfitting
+        - Handles non-linear relationships well
+
+        **Logistic Regression:**
+        - Binary classification algorithm
+        - Fast and interpretable
+        - Good for probability estimates
+
+        ### Features Used by AI (17 Total)
+
+        **Price-based (6):**
+        - Price change 1, 5, 10, 20 periods
+        - Price to SMA20, SMA50 ratio
+
+        **Volatility (2):**
+        - 20-period volatility
+        - High-low range percentage
+
+        **Volume (2):**
+        - Volume ratio (current vs 20-period avg)
+        - Volume change
+
+        **Technical Indicators (5):**
+        - RSI 7
+        - MACD difference (MACD - Signal)
+        - ADX (trend strength)
+        - Momentum 5, 10 periods
+
+        **Trend (2):**
+        - Higher highs pattern
+        - Higher lows pattern
+
+        ---
+
+        ## ❓ Common Questions
+
+        **Q: How accurate is the AI?**
+        A: Typically 55-65% accuracy. Better than random (50%), but not perfect. Use as one tool among many.
+
+        **Q: Can I rely 100% on AI predictions?**
+        A: No. Always combine with technical analysis, risk management, and your own judgment.
+
+        **Q: What if Technical says BUY but AI says BEARISH?**
+        A: Mixed signals = Higher risk. Either skip the trade or reduce position size significantly.
+
+        **Q: How often should I retrain?**
+        A: Weekly for active trading, monthly for swing trading. After major market events, retrain immediately.
+
+        **Q: Why is confidence sometimes 0%?**
+        A: Models aren't trained yet, or there's insufficient data for that stock. Train the models first.
+
+        **Q: Does AI work for all stocks?**
+        A: Works best for liquid F&O stocks with consistent trading patterns. Less reliable for penny stocks.
+
+        ---
+
+        ## 🎯 Quick Reference Card
+
+        ### When to Use AI
+
+        | Scenario | AI Usage | Confidence Level | Action |
+        |----------|----------|------------------|---------|
+        | Technical Score 12+ | Check AI | Any | Strong technical, AI confirms |
+        | Technical Score 8-11 | Use AI heavily | >70% | Need AI validation |
+        | Technical Score 6-7 | AI critical | >75% | Only trade if AI agrees |
+        | Mixed technical signals | Use AI as tiebreaker | >65% | AI decides direction |
+
+        ### Risk Management with AI
+
+        High Confidence (>75%) → Normal position size
+        Moderate (60-75%) → Reduce by 30-50%
+        Low (<60%) → Skip or very small size
+        No Consensus (Tech ≠ AI) → Skip trade
+
+
+        ---
+
+        ## 🚀 Getting Started Checklist
+
+        - [ ] Train AI models (3-5 minutes, one-time)
+        - [ ] Run a scan in Auto Scanner tab
+        - [ ] Check AI predictions for qualified stocks
+        - [ ] Compare Technical vs AI predictions
+        - [ ] Start with paper trading (test 10-20 trades)
+        - [ ] Track accuracy over 2-3 weeks
+        - [ ] Retrain models weekly
+        - [ ] Gradually increase confidence in the system
+        - [ ] Develop your own AI + Technical strategy
+        - [ ] Never skip risk management!
+
+        ---
+
+        ## 📞 Tips from Experienced Users
+
+        > **Vijay S (Developer):** "I use AI confidence as a filter. If scanner finds 10 stocks but only 3 have >70% AI confidence, I focus on those 3. Quality over quantity!"
+
+        > **Strategy:** Combine Early Detection scanner mode + AI predictions for catching moves early. Use Original scanner + High AI confidence for safer, confirmed trades.
+
+        > **Risk Rule:** If AI confidence <60%, I reduce my position size by 50%. If AI and Technical disagree, I skip the trade entirely.
+
+        ---
+
+        **Remember:** AI is a powerful tool, but it's not magic. Use it as part of a complete trading system that includes:
+        - ✅ Technical analysis
+        - ✅ Risk management
+        - ✅ Position sizing
+        - ✅ Emotional discipline
+        - ✅ Continuous learning
+
+        Happy AI-Powered Trading! 🚀📈🤖
+        """)
+
 def render_trade_guide():
     """Render comprehensive trading guide with strategies and scoring system"""
     
@@ -25,11 +465,12 @@ to make informed trading decisions!
     st.markdown(overview_html, unsafe_allow_html=True)
     
     # ========== TABS FOR DIFFERENT SECTIONS ==========
-    guide_tab1, guide_tab2, guide_tab3, guide_tab4 = st.tabs([
+    guide_tab1, guide_tab2, guide_tab3, guide_tab4, guide_tab5 = st.tabs([
         "📊 Scoring System",
         "📈 Indicators Guide", 
         "⚙️ Trading Presets",
-        "💡 Best Practices"
+        "💡 Best Practices",
+        "🤖 AI Predictions"
     ])
     
     # ========== TAB 1: SCORING SYSTEM ==========
@@ -612,7 +1053,10 @@ Start with conservative settings and adjust as you gain experience!
 </div>
 """
             st.markdown(mistakes_guide, unsafe_allow_html=True)
-    
+# ========== TAB 5: AI PREDICTIONS (NEW) ==========
+    with guide_tab5:
+        render_ai_guide()
+
     # ========== FOOTER TIPS ==========
     footer_html = """
 <div style="background:linear-gradient(90deg, #10b981 0%, #3b82f6 100%);

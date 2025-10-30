@@ -11,187 +11,277 @@ from scanning_logic import scan_stock_original, scan_stock_early
 from datetime import datetime
 import pytz
 import paper
+import ai_predictor
+import ai_ui
+# Check if AI module is available
+try:
+    from ai_ui import render_ai_prediction
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
+    print("[INFO] AI module not available - predictions disabled")
+
+from functions import (
+    extract_symbol_df, compute_indicators, check_candle_patterns,
+    check_consolidation, notify_stock, remove_from_watchlist
+)
 
 IST = pytz.timezone("Asia/Kolkata")
 
+
+# ===== 1. RENDER HEADER =====
 def render_header(refresh_count, auto_refresh_sec, last_refresh_time, scan_mode):
-    """Render the header banner"""
-    st.markdown(f"""
-    <div class="header-banner" style="
-        margin-top:0px;
-        padding:4px 12px;
-        border-radius:10px;">
-        <h1 style='font-size:22px; margin-bottom:4px;'>Stock Hunter Dashboard</h1>
-        <p style='text-align:center; font-size:13px; margin-top:0px; line-height:1.3;'>
-            ⏰ Refreshed <b>{refresh_count}</b> times |
-            🔁 Interval: <b>{auto_refresh_sec}</b> sec |
-            🕒 Last Run: <b>{last_refresh_time}</b> |
-            ⚙️ Mode: <b>{scan_mode}</b>
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    """Render app header with refresh info"""
+    
+    mode_emoji = "🐇" if scan_mode == "Early Detection 🐇" else "✅"
+    
+    header_html = f"""
+<div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+padding:20px;border-radius:12px;margin-bottom:20px;box-shadow:0 6px 16px rgba(0,0,0,0.3);">
+<div style="display:flex;justify-content:space-between;align-items:center;">
+<div>
+<h1 style="color:white;margin:0;font-size:32px;">📊 Stock Hunter Dashboard</h1>
+<p style="color:rgba(255,255,255,0.9);margin:5px 0 0 0;font-size:14px;">
+Real-time NSE F&O Stock Scanner with AI Predictions | Mode: {mode_emoji} {scan_mode}
+</p>
+</div>
+<div style="text-align:right;">
+<div style="background:rgba(255,255,255,0.2);padding:8px 16px;border-radius:20px;display:inline-block;">
+<span style="color:white;font-size:13px;">🔄 Auto-refresh: {auto_refresh_sec}s</span>
+</div>
+<div style="color:rgba(255,255,255,0.8);font-size:12px;margin-top:5px;">
+Last update: {last_refresh_time}
+</div>
+</div>
+</div>
+</div>
+"""
+    st.markdown(header_html, unsafe_allow_html=True)
 
-def render_qualified_stocks(df_candidates, signal_score_threshold):
-    """Render qualified stocks table"""
-    with st.expander("📈 Qualified Stocks", expanded=True):
-        qualified_df = df_candidates[df_candidates['Score'] >= signal_score_threshold]
+
+# ===== 2. RENDER QUALIFIED STOCKS =====
+def render_qualified_stocks(df_candidates, threshold):
+    """Display qualified stocks in a compact table"""
+    
+    qualified = df_candidates[df_candidates["Score"] >= threshold]
+    
+    if qualified.empty:
+        st.info(f"ℹ️ No stocks found with score >= {threshold}")
+        return
+    
+    st.success(f"✅ Found {len(qualified)} qualified stocks!")
+    
+    # Format the dataframe for display
+    display_df = qualified.copy()
+    
+    # Format numeric columns
+    if "Last Close" in display_df.columns:
+        display_df["Last Close"] = display_df["Last Close"].apply(
+            lambda x: f"₹{x:.2f}" if isinstance(x, (int, float)) else x
+        )
+    
+    if "Entry" in display_df.columns:
+        display_df["Entry"] = display_df["Entry"].apply(
+            lambda x: f"₹{x:.2f}" if isinstance(x, (int, float)) and x > 0 else "-"
+        )
+    
+    if "Stop Loss" in display_df.columns:
+        display_df["Stop Loss"] = display_df["Stop Loss"].apply(
+            lambda x: f"₹{x:.2f}" if isinstance(x, (int, float)) and x > 0 else "-"
+        )
+    
+    if "Target" in display_df.columns:
+        display_df["Target"] = display_df["Target"].apply(
+            lambda x: f"₹{x:.2f}" if isinstance(x, (int, float)) and x > 0 else "-"
+        )
+    
+    # Display table
+    st.dataframe(
+        display_df,
+        use_container_width=True,
+        height=min(400, len(qualified) * 35 + 50)
+    )
+
+
+# ===== 3. RENDER WATCHLIST =====
+def render_watchlist(df_batch):
+    """Display and manage watchlist"""
+    
+    if not st.session_state.watchlist:
+        st.info("📭 Your watchlist is empty. Add stocks from the scanner!")
+        return
+    
+    st.markdown(f"**{len(st.session_state.watchlist)} stocks in watchlist**")
+    
+    # Display watchlist as cards
+    for symbol, info in st.session_state.watchlist.items():
+        entry = info.get("entry", 0)
+        sl = info.get("sl", 0)
+        target = info.get("target", 0)
+        status = info.get("status", "Active")
         
-        if len(qualified_df) > 0:
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.success(f"✅ {len(qualified_df)} qualified (of {len(df_candidates)} scanned) | Threshold: {signal_score_threshold}")
-            with col2:
-                st.download_button(
-                    "💾 CSV",
-                    qualified_df.to_csv(index=True),
-                    file_name=f"qualified_{datetime.now(IST).strftime('%H%M%S')}.csv",
-                    use_container_width=True
-                )
-            
-            display_df = qualified_df.copy()
-            
-            for col in ['Last Close', 'Entry', 'Stop Loss', 'Target']:
-                if col in display_df.columns:
-                    display_df[col] = display_df[col].apply(
-                        lambda x: f"₹{x:.1f}" if isinstance(x, (int, float)) else x
-                    )
-            
-            display_df['Reasons'] = display_df['Reasons'].apply(
-                lambda x: " | ".join([str(r)[:35] for r in x[:8]]) if isinstance(x, list) else str(x)[:50]
-            )
-            
-            display_df = display_df.rename(columns={
-                'Last Close': 'Last',
-                'Stop Loss': 'SL',
-                'Target': 'Tgt',
-                'Reasons': 'Signals'
-            })
-            
-            st.dataframe(
-                display_df,
-                use_container_width=True,
-                height=min(400, len(qualified_df) * 35 + 38)
-            )
-        else:
-            st.warning(f"No stocks qualified (Threshold: {signal_score_threshold})")
+        # Get current price
+        try:
+            df_sym = extract_symbol_df(df_batch, symbol)
+            current_price = float(df_sym["Close"].iloc[-1]) if df_sym is not None and not df_sym.empty else entry
+        except:
+            current_price = entry
+        
+        # Calculate P/L
+        pl = ((current_price - entry) / entry * 100) if entry > 0 else 0
+        pl_color = "#10b981" if pl > 0 else "#ef4444" if pl < 0 else "#94a3b8"
+        
+        # Distance to targets
+        sl_dist = ((current_price - sl) / current_price * 100) if sl > 0 else 0
+        target_dist = ((target - current_price) / current_price * 100) if target > 0 else 0
+        
+        watchlist_card = f"""
+<div style="background:rgba(255,255,255,0.05);padding:16px;border-radius:10px;margin-bottom:12px;
+            border-left:4px solid {pl_color};">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+<div>
+<h3 style="color:white;margin:0;font-size:20px;">{symbol}</h3>
+<span style="color:#94a3b8;font-size:11px;">Status: {status}</span>
+</div>
+<div style="text-align:right;">
+<div style="color:{pl_color};font-size:20px;font-weight:700;">{pl:+.2f}%</div>
+<div style="color:#94a3b8;font-size:11px;">Current: ₹{current_price:.2f}</div>
+</div>
+</div>
 
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+<div style="background:rgba(16,185,129,0.1);padding:8px;border-radius:6px;text-align:center;">
+<div style="color:#6ee7b7;font-size:10px;">ENTRY</div>
+<div style="color:white;font-size:14px;font-weight:600;">₹{entry:.2f}</div>
+</div>
+<div style="background:rgba(239,68,68,0.1);padding:8px;border-radius:6px;text-align:center;">
+<div style="color:#fca5a5;font-size:10px;">STOP LOSS</div>
+<div style="color:#ef4444;font-size:14px;font-weight:600;">₹{sl:.2f}</div>
+<div style="color:#f87171;font-size:9px;">{sl_dist:.1f}% away</div>
+</div>
+<div style="background:rgba(34,197,94,0.1);padding:8px;border-radius:6px;text-align:center;">
+<div style="color:#86efac;font-size:10px;">TARGET</div>
+<div style="color:#22c55e;font-size:14px;font-weight:600;">₹{target:.2f}</div>
+<div style="color:#4ade80;font-size:9px;">{target_dist:.1f}% away</div>
+</div>
+</div>
+</div>
+"""
+        
+        col_card, col_btn = st.columns([4, 1])
+        
+        with col_card:
+            st.markdown(watchlist_card, unsafe_allow_html=True)
+        
+        with col_btn:
+            if st.button("❌ Remove", key=f"remove_wl_{symbol}", use_container_width=True):
+                remove_from_watchlist(symbol)
+                st.success(f"Removed {symbol}")
+                st.rerun()
+
+
+# ===== 4. RENDER TECHNICAL PREDICTIONS (WITH AI) =====
 def render_technical_predictions(shortlisted_stocks, df_candidates, df_batch):
-    """Ultra-compact technical predictions - minimal space usage"""
+    """Enhanced predictions with lightweight AI summary"""
     with st.expander("🔮 Technical Predictions", expanded=True):
         if not shortlisted_stocks:
             st.info("No shortlisted stocks to show predictions for.")
             return
         
+        # Optional: AI summary toggle
+        enable_ai_summary = st.checkbox("🤖 Show AI Summary", value=True, 
+                                        help="Quick AI prediction summary (full analysis in AI tab)")
+        
         for idx, stock in enumerate(shortlisted_stocks):
-            # Get all data
+            candidate_row = df_candidates.loc[stock]
+            
+            score = candidate_row.get("Score", 0)
+            reasons = candidate_row.get("Reasons", [])
+            entry = candidate_row.get("Entry", None)
+            stop_loss = candidate_row.get("Stop Loss", None)
+            target = candidate_row.get("Target", None)
+            
+            df_stock = extract_symbol_df(df_batch, stock)
+            
+            if df_stock is None or df_stock.empty:
+                st.warning(f"⚠️ No data for {stock}")
+                continue
+            
+            df_stock = compute_indicators(df_stock)
+            
+            if df_stock.empty:
+                continue
+            
             try:
-                candidate_row = df_candidates.loc[stock]
-                entry_for_wl = candidate_row['Entry']
-                sl_for_wl = candidate_row['Stop Loss']
-                target_for_wl = candidate_row['Target']
-                score = candidate_row['Score']
-                reasons = candidate_row['Reasons']
-            except KeyError:
+                last_close = float(df_stock["Close"].iloc[-1])
+            except:
                 continue
             
-            df_for_pred = extract_symbol_df(df_batch, stock)
-            if df_for_pred is None or df_for_pred.empty:
-                continue
+            # Determine technical signal
+            technical_signal = "BUY" if score >= 6 else "NEUTRAL"
             
-            df_for_pred = compute_indicators(df_for_pred)
+            # Format displays
+            entry_for_wl = entry if entry is not None else last_close
+            sl_for_wl = stop_loss if stop_loss is not None else last_close * 0.98
+            target_for_wl = target if target is not None else last_close * 1.04
             
-            # Get technical values
-            last_close = float(df_for_pred["Close"].iloc[-1])
-            rsi7 = float(df_for_pred["RSI7"].dropna().iloc[-1]) if "RSI7" in df_for_pred and not df_for_pred["RSI7"].dropna().empty else np.nan
-            ema20 = float(df_for_pred["EMA20"].iloc[-1]) if "EMA20" in df_for_pred else np.nan
+            # Calculate metrics
+            sl_pct = ((entry_for_wl - sl_for_wl) / entry_for_wl * 100) if entry_for_wl > 0 else 0
+            target_pct = ((target_for_wl - entry_for_wl) / entry_for_wl * 100) if entry_for_wl > 0 else 0
+            risk_reward = f"{(target_pct / sl_pct):.1f}:1" if sl_pct > 0 else "N/A"
             
-            # Calculate R:R
-            if isinstance(entry_for_wl, (int, float)) and isinstance(sl_for_wl, (int, float)) and isinstance(target_for_wl, (int, float)):
-                sl_pct = ((entry_for_wl - sl_for_wl) / entry_for_wl) * 100
-                target_pct = ((target_for_wl - entry_for_wl) / entry_for_wl) * 100
-                risk_reward = f"{(target_pct / sl_pct):.1f}:1" if sl_pct > 0 else "N/A"
-            else:
-                risk_reward = "N/A"
-            
-            # Pre-format conditional values
-            rsi_display = f"{rsi7:.0f}" if not np.isnan(rsi7) else "N/A"
-            rsi_color = "#ef4444" if not np.isnan(rsi7) and rsi7 >= 70 else "#10b981" if not np.isnan(rsi7) and rsi7 >= 50 else "#f59e0b" if not np.isnan(rsi7) else "#94a3b8"
-            
-            # ========== ULTRA COMPACT CARD ==========
+            # Compact card
             compact_card = f"""
-<div style="background:linear-gradient(90deg, #667eea 0%, #764ba2 100%);padding:12px;border-radius:8px;margin-bottom:12px;">
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-<h3 style="color:white;margin:0;font-size:20px;">📊 {stock}</h3>
-<div style="display:flex;gap:6px;">
-<span style="background:rgba(255,255,255,0.2);color:white;padding:3px 8px;border-radius:12px;font-size:11px;">Score: {score}</span>
-<span style="background:rgba(255,215,0,0.3);color:#ffd700;padding:3px 8px;border-radius:12px;font-size:11px;">R:R {risk_reward}</span>
+<div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+padding:16px;border-radius:10px;margin-bottom:12px;box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+<h3 style="color:white;margin:0;font-size:22px;">📊 {stock}</h3>
+<div style="background:rgba(255,255,255,0.2);padding:4px 12px;border-radius:14px;">
+<span style="color:white;font-size:13px;font-weight:700;">Score: {score}</span>
 </div>
 </div>
-<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;font-size:12px;">
-<div style="text-align:center;color:#e2e8f0;">
-<div style="font-size:10px;color:#cbd5e1;">Last</div>
-<div style="font-weight:600;">₹{last_close:.0f}</div>
+
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
+<div style="background:rgba(255,255,255,0.15);padding:10px;border-radius:8px;text-align:center;">
+<div style="color:rgba(255,255,255,0.7);font-size:10px;">LAST</div>
+<div style="color:white;font-weight:700;font-size:16px;">₹{last_close:.0f}</div>
 </div>
-<div style="text-align:center;color:#10b981;">
-<div style="font-size:10px;color:#cbd5e1;">Entry</div>
-<div style="font-weight:600;">₹{entry_for_wl:.0f}</div>
+<div style="background:rgba(16,185,129,0.3);padding:10px;border-radius:8px;text-align:center;">
+<div style="color:rgba(255,255,255,0.7);font-size:10px;">ENTRY</div>
+<div style="color:white;font-weight:700;font-size:16px;">₹{entry_for_wl:.0f}</div>
 </div>
-<div style="text-align:center;color:#ef4444;">
-<div style="font-size:10px;color:#cbd5e1;">SL</div>
-<div style="font-weight:600;">₹{sl_for_wl:.0f}</div>
+<div style="background:rgba(239,68,68,0.3);padding:10px;border-radius:8px;text-align:center;">
+<div style="color:rgba(255,255,255,0.7);font-size:10px;">STOP</div>
+<div style="color:white;font-weight:700;font-size:16px;">₹{sl_for_wl:.0f}</div>
 </div>
-<div style="text-align:center;color:#22c55e;">
-<div style="font-size:10px;color:#cbd5e1;">Target</div>
-<div style="font-weight:600;">₹{target_for_wl:.0f}</div>
+<div style="background:rgba(34,197,94,0.3);padding:10px;border-radius:8px;text-align:center;">
+<div style="color:rgba(255,255,255,0.7);font-size:10px;">TARGET</div>
+<div style="color:white;font-weight:700;font-size:16px;">₹{target_for_wl:.0f}</div>
 </div>
-<div style="text-align:center;color:{rsi_color};">
-<div style="font-size:10px;color:#cbd5e1;">RSI</div>
-<div style="font-weight:600;">{rsi_display}</div>
+<div style="background:rgba(245,158,11,0.3);padding:10px;border-radius:8px;text-align:center;">
+<div style="color:rgba(255,255,255,0.7);font-size:10px;">R:R</div>
+<div style="color:white;font-weight:700;font-size:16px;">{risk_reward}</div>
 </div>
 </div>
 </div>
 """
             st.markdown(compact_card, unsafe_allow_html=True)
             
-            # ========== COMPACT SIGNALS & BUTTONS ==========
+            # Action buttons and signals
             col_signals, col_buttons = st.columns([2.5, 1])
-
+            
             with col_signals:
-                reasons_list = reasons if isinstance(reasons, list) else [reasons]
-
-                # Create compact colored badges
-                badges_html = '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:2px;">'
-                for reason in reasons_list:
-                    reason_text = str(reason)
-                    # Color coding
-                    if "MACD" in reason_text or "reversal" in reason_text:
-                        color = "#4CAF50"
-                    elif "breakout" in reason_text or "Approaching" in reason_text:
-                        color = "#FF9800"
-                    elif "RSI" in reason_text:
-                        color = "#2196F3"
-                    elif "Volume" in reason_text:
-                        color = "#9C27B0"
-                    elif "Consolidating" in reason_text:
-                        color = "#00BCD4"
-                    elif "trend" in reason_text or "ADX" in reason_text:
-                        color = "#FF5722"
-                    elif "EMA" in reason_text or "Price above" in reason_text:
-                        color = "#607D8B"
-                    else:
-                        color = "#757575"
-
-                    badges_html += f'<span style="background:{color};color:white;padding:3px 7px;border-radius:10px;font-size:10px;font-weight:500;">{reason_text}</span>'
-
-                badges_html += "</div>"
-                st.markdown(badges_html, unsafe_allow_html=True)
-
+                if isinstance(reasons, list) and reasons:
+                    badges_html = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">'
+                    for reason in reasons[:8]:
+                        reason_str = str(reason)
+                        color = "#4CAF50" if "MACD" in reason_str else "#FF9800"
+                        badges_html += f'<span style="background:{color};color:white;padding:4px 8px;border-radius:10px;font-size:10px;">{reason_str}</span>'
+                    badges_html += "</div>"
+                    st.markdown(badges_html, unsafe_allow_html=True)
+            
             with col_buttons:
-                # Compact button row
                 btn_col1, btn_col2, btn_col3 = st.columns(3)
-                
-                # Variable to store message
-                action_message = None
                 
                 with btn_col1:
                     if st.button("🟢", key=f"buy_{stock}_{idx}", help="Buy", use_container_width=True):
@@ -200,7 +290,7 @@ def render_technical_predictions(shortlisted_stocks, df_candidates, df_batch):
                             'sl': sl_for_wl, 'target': target_for_wl, 'last_price': last_close,
                             'switch_to_paper': True
                         }
-                        action_message = f"✅ {stock} ready for BUY! Go to Paper Trading tab."
+                        st.success(f"✅ {stock} ready for BUY!")
                 
                 with btn_col2:
                     if st.button("🔴", key=f"sell_{stock}_{idx}", help="Sell", use_container_width=True):
@@ -209,170 +299,58 @@ def render_technical_predictions(shortlisted_stocks, df_candidates, df_batch):
                             'sl': sl_for_wl, 'target': target_for_wl, 'last_price': last_close,
                             'switch_to_paper': True
                         }
-                        action_message = f"✅ {stock} ready for SELL! Go to Paper Trading tab."
+                        st.success(f"✅ {stock} ready for SELL!")
                 
                 with btn_col3:
                     if stock in st.session_state.watchlist:
-                        st.button("✅", key=f"in_wl_{stock}_{idx}", disabled=True, help="In Watchlist", use_container_width=True)
+                        st.button("✅", key=f"in_wl_{stock}_{idx}", disabled=True, use_container_width=True)
                     else:
-                        if st.button("➕", key=f"add_wl_{stock}_{idx}", help="Add to Watchlist", use_container_width=True):
+                        if st.button("➕", key=f"add_wl_{stock}_{idx}", use_container_width=True):
                             st.session_state.watchlist[stock] = {
                                 "entry": entry_for_wl, "sl": sl_for_wl, "target": target_for_wl, "status": "Active"
                             }
-                            action_message = f"✅ Added {stock} to watchlist!"
-                            st.rerun()
+                            st.success(f"✅ Added {stock}!")
+
+            # ===== LIGHTWEIGHT AI SUMMARY =====
+            if enable_ai_summary and st.session_state.predictor is not None:
+                predictor = st.session_state.predictor
                 
-            # Display compact message below buttons
-            if action_message:
-                message_html = f"""
-        <div style="margin-top:8px;padding:8px 12px;background:rgba(16,185,129,0.1);
-                    border-left:3px solid #10b981;border-radius:6px;">
-        <span style="color:#10b981;font-size:12px;font-weight:600;">{action_message}</span>
-        </div>
-        """
-                st.markdown(message_html, unsafe_allow_html=True)
-            
-            
-                    # ========== COLLAPSIBLE DETAILS WITH VISUALS ==========
-            with st.expander(f"📊 {stock} Details", expanded=False):
-                try:
-                    ticker = yf.Ticker(f"{stock}.NS")
-                    info = ticker.info
-                    
-                    # Get all needed data
-                    pe_ratio = info.get('trailingPE', 0)
-                    eps = info.get('trailingEps', 0)
-                    market_cap = info.get('marketCap', 0)
-                    week_52_high = info.get('fiftyTwoWeekHigh', 0)
-                    week_52_low = info.get('fiftyTwoWeekLow', 0)
-                    sector = info.get('sector', 'N/A')
-                    
-                    # Pre-format all values BEFORE using in f-strings
-                    pe_display = f"{pe_ratio:.1f}" if isinstance(pe_ratio, (int, float)) and pe_ratio > 0 else "N/A"
-                    eps_display = f"₹{eps:.1f}" if isinstance(eps, (int, float)) and eps > 0 else "N/A"
-                    mcap_display = f"₹{market_cap/10000000:.0f}Cr" if isinstance(market_cap, (int, float)) and market_cap > 0 else "N/A"
-                    high_52w_display = f"₹{week_52_high:.0f}" if isinstance(week_52_high, (int, float)) and week_52_high > 0 else "N/A"
-                    low_52w_display = f"₹{week_52_low:.0f}" if isinstance(week_52_low, (int, float)) and week_52_low > 0 else "N/A"
-                    ema_display_detail = f"₹{ema20:.0f}" if not np.isnan(ema20) else "N/A"
-                    
-                    # Calculate position in 52W range
-                    if isinstance(week_52_high, (int, float)) and isinstance(week_52_low, (int, float)) and week_52_high > 0 and week_52_low > 0:
-                        range_position = ((last_close - week_52_low) / (week_52_high - week_52_low)) * 100
-                    else:
-                        range_position = 50
-                    
-                    # Price vs EMA
-                    price_above_ema = not np.isnan(ema20) and last_close > ema20
-                    ema_bg_color = "16,185,129" if price_above_ema else "239,68,68"
-                    ema_border_color = "#10b981" if price_above_ema else "#ef4444"
-                    ema_text_color = "#10b981" if price_above_ema else "#ef4444"
-                    ema_status = "Above ↑" if price_above_ema else "Below ↓"
-                    
-                    col_fund, col_tech, col_chart = st.columns([1, 1, 1])
-                    
-                    # ========== FUNDAMENTALS WITH VISUAL CARDS ==========
-                    with col_fund:
-                        st.markdown("**📊 Fundamentals**")
-                        
-                        fund_visual = f"""
-            <div style="background:rgba(59,130,246,0.1);padding:10px;border-radius:6px;margin-bottom:8px;border-left:3px solid #3b82f6;">
-            <div style="display:flex;justify-content:space-between;">
-            <span style="color:#93c5fd;font-size:11px;">P/E Ratio</span>
-            <span style="color:white;font-size:14px;font-weight:700;">{pe_display}</span>
-            </div>
-            </div>
-            <div style="background:rgba(16,185,129,0.1);padding:10px;border-radius:6px;margin-bottom:8px;border-left:3px solid #10b981;">
-            <div style="display:flex;justify-content:space-between;">
-            <span style="color:#6ee7b7;font-size:11px;">EPS (TTM)</span>
-            <span style="color:white;font-size:14px;font-weight:700;">{eps_display}</span>
-            </div>
-            </div>
-            <div style="background:rgba(168,85,247,0.1);padding:10px;border-radius:6px;margin-bottom:8px;border-left:3px solid #a855f7;">
-            <div style="display:flex;justify-content:space-between;">
-            <span style="color:#c4b5fd;font-size:11px;">Market Cap</span>
-            <span style="color:white;font-size:14px;font-weight:700;">{mcap_display}</span>
-            </div>
-            </div>
-            <div style="background:rgba(245,158,11,0.1);padding:10px;border-radius:6px;border-left:3px solid #f59e0b;">
-            <div style="display:flex;justify-content:space-between;">
-            <span style="color:#fcd34d;font-size:11px;">Sector</span>
-            <span style="color:white;font-size:12px;font-weight:600;">{str(sector)[:15]}</span>
-            </div>
-            </div>
-            """
-                        st.markdown(fund_visual, unsafe_allow_html=True)
-                    
-                    # ========== TECHNICALS WITH PROGRESS BARS ==========
-                    with col_tech:
-                        st.markdown("**📈 Technical Indicators**")
-                        
-                        # RSI values
-                        rsi_val = rsi7 if not np.isnan(rsi7) else 50
-                        rsi_color = "#ef4444" if rsi_val >= 70 else "#10b981" if rsi_val >= 50 else "#f59e0b" if rsi_val >= 30 else "#3b82f6"
-                        
-                        tech_visual = f"""
-            <div style="margin-bottom:12px;">
-            <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-            <span style="color:#94a3b8;font-size:11px;">RSI(7)</span>
-            <span style="color:white;font-size:12px;font-weight:600;">{rsi_display}</span>
-            </div>
-            <div style="background:#334155;border-radius:10px;height:8px;overflow:hidden;">
-            <div style="background:{rsi_color};width:{rsi_val:.0f}%;height:100%;border-radius:10px;"></div>
-            </div>
-            </div>
-            <div style="margin-bottom:12px;">
-            <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-            <span style="color:#94a3b8;font-size:11px;">52W Position</span>
-            <span style="color:white;font-size:12px;font-weight:600;">{range_position:.0f}%</span>
-            </div>
-            <div style="background:#334155;border-radius:10px;height:8px;overflow:hidden;">
-            <div style="background:linear-gradient(90deg, #ef4444 0%, #f59e0b 50%, #10b981 100%);width:{range_position:.0f}%;height:100%;border-radius:10px;"></div>
-            </div>
-            <div style="display:flex;justify-content:space-between;margin-top:2px;">
-            <span style="color:#64748b;font-size:9px;">{low_52w_display}</span>
-            <span style="color:#64748b;font-size:9px;">{high_52w_display}</span>
-            </div>
-            </div>
-            <div style="background:rgba(99,102,241,0.1);padding:10px;border-radius:6px;margin-bottom:8px;border-left:3px solid #6366f1;">
-            <div style="display:flex;justify-content:space-between;">
-            <span style="color:#c7d2fe;font-size:11px;">EMA20</span>
-            <span style="color:white;font-size:14px;font-weight:700;">{ema_display_detail}</span>
-            </div>
-            </div>
-            <div style="background:rgba({ema_bg_color},0.1);padding:10px;border-radius:6px;border-left:3px solid {ema_border_color};">
-            <div style="display:flex;justify-content:space-between;">
-            <span style="color:#cbd5e1;font-size:11px;">Price vs EMA</span>
-            <span style="color:{ema_text_color};font-size:14px;font-weight:700;">{ema_status}</span>
-            </div>
-            </div>
-            """
-                        st.markdown(tech_visual, unsafe_allow_html=True)
-                    
-                    # ========== QUICK ACTIONS ==========
-                    with col_chart:
-                        st.markdown("**Price History**")
-                        
-                        # Quick stats in cards
-                        quick_stats = f"""
-            <div style="margin-top:12px;">
-            <div style="background:rgba(34,197,94,0.1);padding:8px;border-radius:6px;margin-bottom:6px;">
-            <div style="color:#86efac;font-size:10px;">52W High</div>
-            <div style="color:#22c55e;font-size:16px;font-weight:700;">{high_52w_display}</div>
-            </div>
-            <div style="background:rgba(239,68,68,0.1);padding:8px;border-radius:6px;margin-bottom:6px;">
-            <div style="color:#fca5a5;font-size:10px;">52W Low</div>
-            <div style="color:#ef4444;font-size:16px;font-weight:700;">{low_52w_display}</div>
-            </div>
-            <div style="background:rgba(99,102,241,0.1);padding:8px;border-radius:6px;">
-            <div style="color:#c7d2fe;font-size:10px;">Current Price</div>
-            <div style="color:#818cf8;font-size:16px;font-weight:700;">₹{last_close:.0f}</div>
-            </div>
-            </div>
-            """
-                        st.markdown(quick_stats, unsafe_allow_html=True)
+                features = predictor.prepare_features(df_stock)
                 
-                except Exception as e:
-                    st.error(f"Unable to load details: {str(e)}")
+                if features and predictor.rf_model is not None:
+                    prob_up, confidence, ai_prediction, details = predictor.predict(features)
+                    
+                    # Compact summary
+                    ai_color = "#10b981" if ai_prediction == "BULLISH" else "#ef4444" if ai_prediction == "BEARISH" else "#94a3b8"
+                    confidence_icon = "🟢" if confidence > 0.75 else "🟡" if confidence > 0.6 else "🔴"
+                    
+                    ai_summary = f"""
+<div style="background:rgba(59,130,246,0.1);padding:10px;border-radius:8px;margin:10px 0;
+            border-left:3px solid {ai_color};">
+<div style="display:flex;justify-content:space-between;align-items:center;">
+<div>
+<span style="color:#93c5fd;font-size:11px;font-weight:600;">🤖 AI PREDICTION</span>
+<span style="color:{ai_color};font-size:16px;font-weight:700;margin-left:10px;">{ai_prediction}</span>
+<span style="color:white;font-size:13px;margin-left:10px;">{prob_up*100:.0f}% UP</span>
+</div>
+<div style="text-align:right;">
+<span style="color:#94a3b8;font-size:10px;">Confidence</span>
+<span style="color:white;font-size:14px;font-weight:700;margin-left:6px;">{confidence_icon} {confidence*100:.0f}%</span>
+</div>
+</div>
+</div>
+"""
+                    st.markdown(ai_summary, unsafe_allow_html=True)
+                    
+                    # EXPANDABLE DETAILED ANALYSIS
+                    with st.expander(f"📊 View Detailed AI Analysis", expanded=False):
+                        render_ai_prediction(stock, df_stock, technical_signal, min_confidence=0.6)
+                else:
+                    st.info("🤖 AI models not trained yet. Go to **AI Predictions** tab to train.")
+            
+            st.markdown("---")
+
+
 #########################
 # Manual Analysis Section
 #########################
@@ -811,51 +789,82 @@ Score: {score}/{settings['signal_score_threshold']}
             
             # ========== ACTION BUTTONS ==========
             st.markdown("#### 🎬 Quick Actions")
+            
+            # Create columns and capture button states
             col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
             
+            # Initialize variables BEFORE columns
+            buy_clicked = False
+            sell_clicked = False
+            watchlist_clicked = False
+            chart_clicked = False
+            
+            # Button 1 - ONLY capture state, NO messages
             with col_btn1:
-                if st.button("🟢 Setup Buy Trade", key=f"buy_manual_{manual_symbol}_{idx}", use_container_width=True, type="primary"):
-                    st.session_state['pending_trade'] = {
-                        'symbol': manual_symbol, 'action': 'BUY',
-                        'entry': entry if entry else last_price,
-                        'sl': stop_loss if stop_loss else last_price * 0.98,
-                        'target': target if target else last_price * 1.04,
-                        'last_price': last_price, 'switch_to_paper': True
-                    }
-                    st.success(f"✅ {manual_symbol} ready for BUY! Go to Paper Trading tab.")
+                buy_clicked = st.button("🟢 Setup Buy Trade", key=f"buy_manual_{manual_symbol}_{idx}", 
+                                       use_container_width=True, type="primary")
             
+            # Button 2 - ONLY capture state, NO messages
             with col_btn2:
-                if st.button("🔴 Setup Sell Trade", key=f"sell_manual_{manual_symbol}_{idx}", use_container_width=True):
-                    st.session_state['pending_trade'] = {
-                        'symbol': manual_symbol, 'action': 'SELL',
-                        'entry': entry if entry else last_price,
-                        'sl': stop_loss if stop_loss else last_price * 1.02,
-                        'target': target if target else last_price * 0.96,
-                        'last_price': last_price, 'switch_to_paper': True
-                    }
-                    st.success(f"✅ {manual_symbol} ready for SELL! Go to Paper Trading tab.")
+                sell_clicked = st.button("🔴 Setup Sell Trade", key=f"sell_manual_{manual_symbol}_{idx}", 
+                                        use_container_width=True)
             
+            # Button 3 - ONLY capture state, NO messages
             with col_btn3:
                 if manual_symbol in st.session_state.watchlist:
-                    st.button("✅ In Watchlist", key=f"in_wl_manual_{manual_symbol}_{idx}", disabled=True, use_container_width=True)
+                    st.button("✅ In Watchlist", key=f"in_wl_manual_{manual_symbol}_{idx}", 
+                             disabled=True, use_container_width=True)
                 else:
-                    if st.button("➕ Add to Watchlist", key=f"add_manual_{manual_symbol}_{idx}", use_container_width=True):
-                        entry_to_save = entry if entry else last_price
-                        sl_to_save = stop_loss if stop_loss else last_price * 0.98
-                        target_to_save = target if target else last_price * 1.04
-                        
-                        st.session_state.watchlist[manual_symbol] = {
-                            "entry": entry_to_save, "sl": sl_to_save,
-                            "target": target_to_save, "status": "Active"
-                        }
-                        st.success(f"✅ Added {manual_symbol} to watchlist!")
-                        st.rerun()
+                    watchlist_clicked = st.button("➕ Add to Watchlist", key=f"add_manual_{manual_symbol}_{idx}", 
+                                                 use_container_width=True)
             
+            # Button 4 - ONLY capture state, NO messages
             with col_btn4:
-                if st.button("📈 TradingView", key=f"chart_manual_{manual_symbol}_{idx}", use_container_width=True):
-                    st.markdown(f'<a href="https://www.tradingview.com/chart/?symbol=NSE%3A{manual_symbol}" target="_blank">Open Chart →</a>', unsafe_allow_html=True)
+                chart_clicked = st.button("📈 TradingView", key=f"chart_manual_{manual_symbol}_{idx}", 
+                                         use_container_width=True)
             
-
+            # ===== NOW HANDLE ALL ACTIONS COMPLETELY OUTSIDE COLUMNS =====
+            # This code is NO LONGER inside any 'with' block
+            
+            # Handle Buy
+            if buy_clicked:
+                st.session_state['pending_trade'] = {
+                    'symbol': manual_symbol, 'action': 'BUY',
+                    'entry': entry if entry else last_price,
+                    'sl': stop_loss if stop_loss else last_price * 0.98,
+                    'target': target if target else last_price * 1.04,
+                    'last_price': last_price, 'switch_to_paper': True
+                }
+                st.success(f"✅ {manual_symbol} ready for BUY! Go to Paper Trading tab.")
+            
+            # Handle Sell
+            if sell_clicked:
+                st.session_state['pending_trade'] = {
+                    'symbol': manual_symbol, 'action': 'SELL',
+                    'entry': entry if entry else last_price,
+                    'sl': stop_loss if stop_loss else last_price * 1.02,
+                    'target': target if target else last_price * 0.96,
+                    'last_price': last_price, 'switch_to_paper': True
+                }
+                st.success(f"✅ {manual_symbol} ready for SELL! Go to Paper Trading tab.")
+            
+            # Handle Watchlist
+            if watchlist_clicked:
+                entry_to_save = entry if entry else last_price
+                sl_to_save = stop_loss if stop_loss else last_price * 0.98
+                target_to_save = target if target else last_price * 1.04
+                
+                st.session_state.watchlist[manual_symbol] = {
+                    "entry": entry_to_save, "sl": sl_to_save,
+                    "target": target_to_save, "status": "Active"
+                }
+                st.success(f"✅ Added {manual_symbol} to watchlist!")
+                st.rerun()
+            
+            # Handle TradingView
+            if chart_clicked:
+                st.markdown(f'<a href="https://www.tradingview.com/chart/?symbol=NSE%3A{manual_symbol}" target="_blank" style="color:#3b82f6;font-size:14px;font-weight:600;">🔗 Click here to open TradingView chart →</a>', unsafe_allow_html=True)
+            
 
 def render_watchlist(df_batch):
     """Render watchlist section"""

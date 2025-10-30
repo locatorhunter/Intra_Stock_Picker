@@ -20,108 +20,332 @@ IST = pytz.timezone("Asia/Kolkata")
 FILTER_DIR = "filter_presets"
 
 # -------------------------
-# Notification Functions
+# Enhanced Notification Functions
 # -------------------------
 
-def safe_notify(title, msg):
-    """Safe desktop notification (reads from session state)"""
+def safe_notify(title, msg, timeout=8, icon=None):
+    """Enhanced desktop notification with better error handling"""
     notify_desktop = st.session_state.get("notify_desktop", True)
-    if notify_desktop:
-        try:
-            notification.notify(title=title, message=msg, timeout=6)
-            print(f"[INFO] Desktop notification sent: {title}")
-        except Exception as e:
-            st.warning(f"Desktop notify error: {e}")
+    
+    if not notify_desktop:
+        return
+    
+    try:
+        # Truncate message if too long (Windows has ~256 char limit)
+        max_len = 250
+        if len(msg) > max_len:
+            msg = msg[:max_len-3] + "..."
+        
+        notification.notify(
+            title=title,
+            message=msg,
+            timeout=timeout,
+            app_icon=icon  # Optional: Path to .ico file
+        )
+        print(f"[✓] Desktop notification sent: {title}")
+        return True
+    except Exception as e:
+        print(f"[✗] Desktop notify error: {e}")
+        return False
 
 
-def safe_telegram_send(text):
-    """Safe Telegram notification (reads from session state)"""
+def safe_telegram_send(text, parse_mode="HTML", disable_preview=True):
+    """Enhanced Telegram notification with better formatting"""
     notify_telegram = st.session_state.get("notify_telegram", False)
     BOT_TOKEN = st.session_state.get("BOT_TOKEN", "")
     CHAT_ID = st.session_state.get("CHAT_ID", "")
-
-    if not notify_telegram or not BOT_TOKEN or not CHAT_ID:
-        print("DEBUG: Telegram disabled or credentials missing.")
-        return False, "Telegram disabled or credentials missing"
-
+    
+    if not notify_telegram:
+        return False, "Telegram notifications disabled"
+    
+    if not BOT_TOKEN or not CHAT_ID:
+        return False, "Missing Telegram credentials"
+    
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    
     try:
-        resp = requests.get(url, params={"chat_id": CHAT_ID, "text": text}, timeout=5)
+        params = {
+            "chat_id": CHAT_ID,
+            "text": text,
+            "parse_mode": parse_mode,
+            "disable_web_page_preview": disable_preview
+        }
+        
+        resp = requests.post(url, json=params, timeout=10)
+        
         if resp.status_code == 200:
-            print("DEBUG: Telegram send SUCCESS (Status 200).")
-            return True, "OK"
+            print(f"[✓] Telegram sent successfully")
+            return True, "Message sent"
         else:
-            data = resp.json()
-            error_msg = data.get("description", f"HTTP {resp.status_code}")
-            print(f"DEBUG: Telegram send FAILED (Status {resp.status_code}). Error: {error_msg}")
+            error_data = resp.json()
+            error_msg = error_data.get("description", f"HTTP {resp.status_code}")
+            print(f"[✗] Telegram error: {error_msg}")
             return False, error_msg
+            
+    except requests.Timeout:
+        return False, "Request timeout"
+    except requests.ConnectionError:
+        return False, "Connection error"
     except Exception as e:
-        print(f"DEBUG: Telegram send EXCEPTION. Error: {str(e)}")
         return False, str(e)
 
 
 def notify_stock(symbol, last_price, entry=None, stop_loss=None, target=None, score=None, reasons=None):
-    """Send detailed notifications for shortlisted stocks — clean, emoji-free criteria"""
-    timestamp = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
+    """Enhanced stock notification with rich formatting and better structure"""
+    timestamp = datetime.now(IST).strftime('%d %b %Y, %I:%M %p')
+    
+    # Calculate R:R ratio
+    risk_reward = "N/A"
+    if entry and stop_loss and target:
+        risk = abs(entry - stop_loss)
+        reward = abs(target - entry)
+        if risk > 0:
+            risk_reward = f"{(reward/risk):.1f}:1"
+    
+    # ========== TELEGRAM MESSAGE (Rich HTML) ==========
+    telegram_msg = f"""
+🚀 <b>TRADE SIGNAL: {symbol}</b>
 
-    # --- Base trade info ---
-    msg = (
-        f"📢 <b>{symbol}</b> shortlisted!\\n"
-        f"💵 <b>Last:</b> ₹{last_price:.2f}\\n"
-        f"⏰ <b>Time:</b> {timestamp}"
-    )
-
-    # --- Trade levels ---
+📊 <b>Price Details</b>
+💵 Current: ₹{last_price:.2f}
+"""
+    
     if entry:
-        msg += f"\\n🟢 <b>Entry:</b> ₹{entry:.2f}"
+        telegram_msg += f"🟢 Entry: ₹{entry:.2f}\n"
     if stop_loss:
-        msg += f"\\n❌ <b>Stop-Loss:</b> ₹{stop_loss:.2f}"
+        telegram_msg += f"🛑 Stop Loss: ₹{stop_loss:.2f}\n"
     if target:
-        msg += f"\\n🏆 <b>Target:</b> ₹{target:.2f}"
+        telegram_msg += f"🎯 Target: ₹{target:.2f}\n"
+    
+    # Add R:R and Score
+    if risk_reward != "N/A":
+        telegram_msg += f"\n⚖️ <b>Risk:Reward:</b> {risk_reward}"
     if score is not None:
-        msg += f"\\n🎯 <b>Score:</b> {score}"
+        telegram_msg += f"\n🎯 <b>Signal Score:</b> {score}"
+    
+    # Add reasons/criteria
+    if reasons:
+        telegram_msg += "\n\n📋 <b>Key Signals:</b>"
+        
+        if isinstance(reasons, list):
+            # Show max 6 reasons to keep it compact
+            display_reasons = reasons[:6]
+            for idx, reason in enumerate(display_reasons, 1):
+                # Clean up reason text
+                clean_reason = str(reason).replace("💥", "").replace("📈", "").replace("📊", "").strip()
+                telegram_msg += f"\n{idx}. {clean_reason}"
+            
+            if len(reasons) > 6:
+                telegram_msg += f"\n<i>...and {len(reasons) - 6} more signals</i>"
+        else:
+            telegram_msg += f"\n• {reasons}"
+    
+    # Add timestamp
+    telegram_msg += f"\n\n🕐 <i>{timestamp}</i>"
+    
+    # Add quick action hint
+    telegram_msg += "\n\n<i>💡 Check your app for detailed analysis</i>"
+    
+    # ========== DESKTOP MESSAGE (Plain Text) ==========
+    desktop_msg = f"""
+{symbol} - Signal Alert
 
-    # --- Passed criteria (no emojis, just clean text) ---
-    if reasons and isinstance(reasons, list):
-        short_reasons = reasons[:8]
-        msg += "\\n\\n<b>Passed Criteria:</b>"
-        for r in short_reasons:
-            msg += f"\\n• {r}"
-        if len(reasons) > 8:
-            msg += f"\\n…and {len(reasons) - 8} more."
-    elif reasons:
-        msg += f"\\n\\n<b>Reason:</b> {reasons}"
+Price: ₹{last_price:.2f}
+"""
+    
+    if entry:
+        desktop_msg += f"Entry: ₹{entry:.2f}\n"
+    if stop_loss:
+        desktop_msg += f"Stop Loss: ₹{stop_loss:.2f}\n"
+    if target:
+        desktop_msg += f"Target: ₹{target:.2f}\n"
+    
+    if risk_reward != "N/A":
+        desktop_msg += f"R:R: {risk_reward}\n"
+    
+    if score is not None:
+        desktop_msg += f"Score: {score}\n"
+    
+    desktop_msg += f"\nTime: {timestamp}"
+    
+    # ========== SEND NOTIFICATIONS ==========
+    # Desktop
+    safe_notify(f"📈 {symbol} Signal", desktop_msg, timeout=10)
+    
+    # Telegram
+    safe_telegram_send(telegram_msg, parse_mode="HTML")
+    
+    print(f"[✓] Notifications sent for {symbol}")
 
-    # --- Convert to plain text for desktop ---
-    plain_msg = (
-        msg.replace("<b>", "")
-           .replace("</b>", "")
-           .replace("&nbsp;", " ")
-           .replace("• ", "- ")
-    )
 
-    # --- Desktop notification ---
-    safe_notify(f"📈 NSE Picker: {symbol}", plain_msg)
+def notify_watchlist_alert(symbol, alert_type, current_price, trigger_price):
+    """Enhanced watchlist alert notification"""
+    timestamp = datetime.now(IST).strftime('%d %b %Y, %I:%M %p')
+    
+    # Determine emoji and message
+    if alert_type == "TARGET":
+        emoji = "🎯"
+        title = "TARGET HIT"
+        color_code = "🟢"
+    else:  # STOP LOSS
+        emoji = "🛑"
+        title = "STOP LOSS HIT"
+        color_code = "🔴"
+    
+    # ========== TELEGRAM MESSAGE ==========
+    telegram_msg = f"""
+{emoji} <b>{title}: {symbol}</b>
 
-    # --- Telegram notification (HTML formatted) ---
-    notify_telegram = st.session_state.get("notify_telegram", False)
-    BOT_TOKEN = st.session_state.get("BOT_TOKEN", "")
-    CHAT_ID = st.session_state.get("CHAT_ID", "")
-    if notify_telegram and BOT_TOKEN and CHAT_ID:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+{color_code} <b>Alert Details</b>
+💰 Current Price: ₹{current_price:.2f}
+📍 Trigger Level: ₹{trigger_price:.2f}
+🕐 Time: {timestamp}
+
+<i>💡 Position has been removed from watchlist</i>
+"""
+    
+    # ========== DESKTOP MESSAGE ==========
+    desktop_msg = f"""
+{title}!
+
+{symbol}
+Current: ₹{current_price:.2f}
+Trigger: ₹{trigger_price:.2f}
+
+Removed from watchlist
+"""
+    
+    # Send notifications
+    safe_notify(f"{emoji} {symbol} - {title}", desktop_msg, timeout=15)
+    safe_telegram_send(telegram_msg, parse_mode="HTML")
+    
+    print(f"[✓] Watchlist alert sent for {symbol} - {alert_type}")
+
+
+def notify_trade_execution(symbol, action, quantity, price, trade_type="paper"):
+    """Notification when trade is executed"""
+    timestamp = datetime.now(IST).strftime('%d %b %Y, %I:%M %p')
+    
+    action_emoji = "🟢" if action == "BUY" else "🔴"
+    trade_emoji = "📝" if trade_type == "paper" else "💰"
+    
+    # ========== TELEGRAM MESSAGE ==========
+    telegram_msg = f"""
+{trade_emoji} <b>TRADE EXECUTED</b>
+
+{action_emoji} <b>{action}</b> {quantity} x <b>{symbol}</b>
+💵 Price: ₹{price:.2f}
+💼 Total: ₹{(quantity * price):.2f}
+📊 Type: {trade_type.upper()} Trading
+🕐 {timestamp}
+"""
+    
+    # ========== DESKTOP MESSAGE ==========
+    desktop_msg = f"""
+Trade Executed
+
+{action} {quantity} x {symbol}
+Price: ₹{price:.2f}
+Total: ₹{(quantity * price):.2f}
+
+{timestamp}
+"""
+    
+    # Send only if enabled
+    if st.session_state.get("notify_trades", True):
+        safe_notify(f"{action_emoji} {action} {symbol}", desktop_msg)
+        safe_telegram_send(telegram_msg, parse_mode="HTML")
+        
+        print(f"[✓] Trade execution notification sent for {symbol}")
+
+
+def notify_trade_closed(symbol, action, entry, exit_price, pl, pl_pct):
+    """Notification when trade is closed"""
+    timestamp = datetime.now(IST).strftime('%d %b %Y, %I:%M %p')
+    
+    # Determine if profit or loss
+    is_profit = pl > 0
+    result_emoji = "🎉" if is_profit else "😞"
+    result_text = "PROFIT" if is_profit else "LOSS"
+    color = "🟢" if is_profit else "🔴"
+    
+    # ========== TELEGRAM MESSAGE ==========
+    telegram_msg = f"""
+{result_emoji} <b>TRADE CLOSED: {symbol}</b>
+
+{color} <b>{result_text}</b>
+📊 Type: {action}
+💵 Entry: ₹{entry:.2f}
+💰 Exit: ₹{exit_price:.2f}
+
+📈 <b>P/L: ₹{pl:.2f} ({pl_pct:+.2f}%)</b>
+
+🕐 {timestamp}
+"""
+    
+    # ========== DESKTOP MESSAGE ==========
+    desktop_msg = f"""
+Trade Closed: {symbol}
+
+{result_text}
+P/L: ₹{pl:.2f} ({pl_pct:+.2f}%)
+
+Entry: ₹{entry:.2f}
+Exit: ₹{exit_price:.2f}
+
+{timestamp}
+"""
+    
+    # Send notifications
+    safe_notify(f"{result_emoji} {symbol} - {result_text}", desktop_msg, timeout=15)
+    safe_telegram_send(telegram_msg, parse_mode="HTML")
+    
+    print(f"[✓] Trade closure notification sent for {symbol}")
+
+
+# -------------------------
+# Enhanced Watchlist Functions with Notifications
+# -------------------------
+
+def check_watchlist_hits(df_batch):
+    """Enhanced watchlist monitoring with better notifications"""
+    if not st.session_state.get("watchlist"):
+        return
+    
+    keys_to_remove = []
+    
+    for sym, info in st.session_state.watchlist.items():
+        target = info.get("target")
+        sl = info.get("sl")
+        
+        # Extract symbol data
+        df_sym = extract_symbol_df(df_batch, sym)
+        if df_sym is None or df_sym.empty:
+            continue
+        
         try:
-            requests.get(
-                url,
-                params={
-                    "chat_id": CHAT_ID,
-                    "text": msg,
-                    "parse_mode": "HTML"
-                },
-                timeout=5
-            )
-            print(f"[OK] Telegram sent for {symbol}")
-        except Exception as e:
-            print(f"[ERR] Telegram send failed: {e}")
+            latest_price = float(df_sym["Close"].iloc[-1])
+        except:
+            continue
+        
+        # Check target hit
+        if target and latest_price >= target:
+            notify_watchlist_alert(sym, "TARGET", latest_price, target)
+            keys_to_remove.append(sym)
+            info["status"] = "Closed - Target Hit"
+            
+        # Check stop loss hit
+        elif sl and latest_price <= sl:
+            notify_watchlist_alert(sym, "STOP_LOSS", latest_price, sl)
+            keys_to_remove.append(sym)
+            info["status"] = "Closed - Stop Loss Hit"
+    
+    # Remove closed positions
+    for key in keys_to_remove:
+        del st.session_state.watchlist[key]
+    
+    if keys_to_remove:
+        print(f"[✓] Watchlist: {len(keys_to_remove)} position(s) closed")
 
 
 # -------------------------
