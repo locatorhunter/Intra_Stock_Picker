@@ -7,14 +7,20 @@ import pandas as pd
 import yfinance as yf
 import numpy as np
 import requests
-from plyer import notification
+import logging
+from typing import List, Dict, Tuple, Optional, Union
 from datetime import datetime, date
 import pytz
 import json
 import os
 import paper
-import logging
-from typing import List, Dict, Tuple, Optional, Union
+
+# Try to import plyer for desktop notifications
+try:
+    from plyer import notification
+    PLYER_AVAILABLE = True
+except ImportError:
+    PLYER_AVAILABLE = False
 
 # Set up logging before any other operations
 logging.basicConfig(
@@ -59,8 +65,7 @@ FILTER_DIR = "filter_presets"
 # Enhanced Notification Functions
 # -------------------------
 
-def safe_notify(title: str, msg: str, timeout: int = 8, 
-               icon: Optional[str] = None) -> bool:
+def safe_notify(title: str, msg: str, timeout: int = 8, icon: Optional[str] = None) -> bool:
     """
     Send desktop notification with enhanced error handling and logging
     
@@ -73,37 +78,52 @@ def safe_notify(title: str, msg: str, timeout: int = 8,
     Returns:
         bool: True if notification was sent successfully, False otherwise
     """
+def safe_notify(title: str, msg: str, timeout: int = 8, icon: Optional[str] = None) -> bool:
+    """
+    Send desktop notification with enhanced error handling and logging
+    Args:
+        title: Notification title
+        msg: Notification message
+        timeout: How long notification should remain visible (seconds)
+        icon: Path to .ico file for notification icon
+    Returns:
+        bool: True if notification was sent successfully, False otherwise
+    """
     notify_desktop = st.session_state.get("notify_desktop", True)
-    
     if not notify_desktop:
         logger.info("Desktop notifications are disabled")
         return False
-    
     try:
         # Validate inputs
         if not isinstance(title, str) or not isinstance(msg, str):
             raise ValueError("Title and message must be strings")
-            
         # Truncate message if too long (Windows has ~256 char limit)
         max_len = 250
         if len(msg) > max_len:
             msg = msg[:max_len-3] + "..."
             logger.debug(f"Message truncated to {max_len} characters")
-        
-        notification.notify(
-            title=title,
-            message=msg,
-            timeout=max(1, min(timeout, 30)),  # Ensure timeout is between 1-30
-            app_icon=icon
-        )
-        logger.info(f"Desktop notification sent: {title}")
-        return True
-    
+        if 'PLYER_AVAILABLE' in globals() and PLYER_AVAILABLE:
+            notification.notify(
+                title=title,
+                message=msg,
+                timeout=max(1, min(timeout, 30)),  # Ensure timeout is between 1-30
+                app_icon=icon
+            )
+            logger.info(f"Desktop notification sent: {title}")
+            return True
+        else:
+            # Fallback: use Streamlit notification
+            try:
+                st.toast(f"{title}: {msg}")
+            except Exception:
+                st.info(f"{title}: {msg}")
+            logger.info(f"Streamlit notification sent: {title}")
+            return True
     except ValueError as ve:
         logger.error(f"Validation error in safe_notify: {ve}")
         return False
     except Exception as e:
-        logger.error(f"Desktop notification error: {str(e)}", exc_info=True)
+        logger.error(f"Notification error: {str(e)}", exc_info=True)
         return False
 
 
@@ -824,13 +844,7 @@ def check_watchlist_hits(df_batch):
     keys_to_remove = []
     
     for sym, info in st.session_state.watchlist.items(): 
-        target = info.get("target")
-        sl = info.get("sl")
-        
-        df_sym = extract_symbol_df(df_batch, sym)
-        if df_sym is None or df_sym.empty:
-            continue
-            
+        target = info.get
         latest_price = float(df_sym["Close"].iloc[-1])
         message = ""
 
